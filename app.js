@@ -3,14 +3,17 @@ const WORKER_URL = "https://stock-proxy.honggu0212.workers.dev";
 let holdings = JSON.parse(localStorage.getItem("myHoldings")) || [];
 let usdTwdRate = 32.25; 
 let liveQuotes = {};
+let trendChart = null;
 let sparklineCharts = {};
 
 let countdownSeconds = 60;
 let timerInterval = null;
 
 document.addEventListener("DOMContentLoaded", () => {
+  initMainChart();
   renderAll();
   fetchData();
+  fetchWeekHistory();
   startCountdown();
 
   const form = document.getElementById("addForm");
@@ -72,6 +75,7 @@ async function manualRefresh() {
   if (countdownEl) countdownEl.textContent = "60 秒後更新";
 
   await fetchData();
+  await fetchWeekHistory();
 
   if (refreshBtn) {
     refreshBtn.disabled = false;
@@ -132,6 +136,23 @@ async function fetchData() {
 
   renderAll();
   loadAllSparklines();
+}
+
+// 取得「大圖表」歷史數據
+async function fetchWeekHistory() {
+  try {
+    const res = await fetch(`${WORKER_URL}?action=history`);
+    if (res.ok) {
+      const history = await res.json();
+      if (Array.isArray(history) && history.length > 0) {
+        const labels = history.map(h => h.time);
+        const values = history.map(h => h.val);
+        updateMainChart(labels, values);
+      }
+    }
+  } catch (e) {
+    console.error("無法取得總資產歷史:", e);
+  }
 }
 
 function renderAll() {
@@ -219,6 +240,9 @@ function renderAll() {
   const totalPnlRate = totalCostTwd > 0 ? (totalPnl / totalCostTwd) * 100 : 0;
   const pnlSign = totalPnl >= 0 ? "+" : "";
 
+  const totalMarketValEl = document.getElementById("totalMarketValue");
+  if (totalMarketValEl) totalMarketValEl.textContent = `$${Math.round(totalValueTwd).toLocaleString()}`;
+
   const totalCostEl = document.getElementById("totalCost");
   if (totalCostEl) totalCostEl.textContent = `$${Math.round(totalCostTwd).toLocaleString()}`;
   
@@ -240,7 +264,50 @@ function renderAll() {
   }
 }
 
-// 載入所有持股的 2 天 5分鐘迷你走勢圖
+// 初始化「大圖表」
+function initMainChart() {
+  const canvas = document.getElementById("trendChart");
+  if (!canvas) return;
+  const ctx = canvas.getContext("2d");
+
+  if (typeof Chart === "undefined") return;
+
+  trendChart = new Chart(ctx, {
+    type: "line",
+    data: {
+      labels: [],
+      datasets: [{
+        label: "資產走勢",
+        data: [],
+        borderColor: "#00e676",
+        backgroundColor: "rgba(0, 230, 118, 0.1)",
+        borderWidth: 2,
+        fill: true,
+        tension: 0.2,
+        pointRadius: 3
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { grid: { color: "#1e2638" }, ticks: { color: "#8292ab", maxTicksLimit: 12 } },
+        y: { grid: { color: "#1e2638" }, ticks: { color: "#8292ab" } }
+      }
+    }
+  });
+}
+
+function updateMainChart(labels, data) {
+  if (trendChart) {
+    trendChart.data.labels = labels;
+    trendChart.data.datasets[0].data = data;
+    trendChart.update();
+  }
+}
+
+// 載入個股迷你走勢圖
 async function loadAllSparklines() {
   for (const item of holdings) {
     try {
@@ -250,7 +317,6 @@ async function loadAllSparklines() {
         if (Array.isArray(history) && history.length > 0) {
           const labels = history.map(h => h.time);
           const prices = history.map(h => h.price);
-          
           const isUp = prices[prices.length - 1] >= prices[0];
           renderSparkline(item.symbol, labels, prices, isUp);
         }
@@ -261,7 +327,6 @@ async function loadAllSparklines() {
   }
 }
 
-// 繪製個股迷你 Sparkline 圖表
 function renderSparkline(symbol, labels, data, isUp) {
   const canvasId = `spark_${symbol.replace(/[^a-zA-Z0-9]/g, '_')}`;
   const canvas = document.getElementById(canvasId);
