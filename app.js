@@ -1,4 +1,4 @@
-const WORKER_URL = "https://stock-proxy.honggu0212.workers.dev"; // ⚠️ 請確保這是你的 Worker 網址
+const WORKER_URL = "https://stock-proxy.honggu0212.workers.dev";
 
 let holdings = JSON.parse(localStorage.getItem("myHoldings")) || [];
 let usdTwdRate = 32.25; 
@@ -8,8 +8,9 @@ let trendChart = null;
 document.addEventListener("DOMContentLoaded", () => {
   initChart();
   renderAll();
-  fetchData();
-  fetchWeekHistory();
+  
+  // 網頁一載入，先同步持股並拉取數據
+  syncHoldingsAndRefresh();
 
   const form = document.getElementById("addForm");
   if (form) {
@@ -37,15 +38,28 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 });
 
-function saveAndRefresh() {
+// 手動或自動同步持股到 Worker 並重新整理
+async function syncHoldingsAndRefresh() {
   localStorage.setItem("myHoldings", JSON.stringify(holdings));
-  // 同步持股資料給 Cloudflare 機器人
-  fetch(`${WORKER_URL}?action=sync_holdings`, {
-    method: "POST",
-    body: JSON.stringify(holdings)
-  }).catch(e => console.error("同步失敗", e));
+  
+  if (holdings.length > 0) {
+    try {
+      await fetch(`${WORKER_URL}?action=sync_holdings`, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain" },
+        body: JSON.stringify(holdings)
+      });
+    } catch (e) {
+      console.error("同步失敗", e);
+    }
+  }
 
-  fetchData();
+  await fetchData();
+  await fetchWeekHistory();
+}
+
+function saveAndRefresh() {
+  syncHoldingsAndRefresh();
 }
 
 function deleteStock(symbol) {
@@ -82,7 +96,6 @@ async function fetchData() {
   renderAll();
 }
 
-// 取得 Cloudflare 背景自動紀錄的一週（2016筆）走勢
 async function fetchWeekHistory() {
   try {
     const res = await fetch(`${WORKER_URL}?action=history`);
@@ -157,8 +170,11 @@ function renderAll() {
   const totalPnlRate = totalCostTwd > 0 ? (totalPnl / totalCostTwd) * 100 : 0;
   const pnlSign = totalPnl >= 0 ? "+" : "";
 
-  document.getElementById("totalMarketValue").textContent = `$${Math.round(totalValueTwd).toLocaleString()}`;
-  document.getElementById("totalCost").textContent = `$${Math.round(totalCostTwd).toLocaleString()}`;
+  const totalMarketValEl = document.getElementById("totalMarketValue");
+  if (totalMarketValEl) totalMarketValEl.textContent = `$${Math.round(totalValueTwd).toLocaleString()}`;
+  
+  const totalCostEl = document.getElementById("totalCost");
+  if (totalCostEl) totalCostEl.textContent = `$${Math.round(totalCostTwd).toLocaleString()}`;
   
   const pnlEl = document.getElementById("totalPnl");
   if (pnlEl) {
@@ -172,7 +188,10 @@ function renderAll() {
     pnlRateEl.className = `stat-sub ${totalPnl >= 0 ? 'val-up' : 'val-down'}`;
   }
 
-  document.getElementById("tickerTrack").innerHTML = tickerHtml ? (tickerHtml + tickerHtml) : '<span class="ticker-item">尚無持股資料</span>';
+  const tickerTrackEl = document.getElementById("tickerTrack");
+  if (tickerTrackEl) {
+    tickerTrackEl.innerHTML = tickerHtml ? (tickerHtml + tickerHtml) : '<span class="ticker-item">尚無持股資料</span>';
+  }
 }
 
 function updateTime() {
@@ -185,6 +204,11 @@ function initChart() {
   if (!canvas) return;
   const ctx = canvas.getContext("2d");
 
+  if (typeof Chart === "undefined") {
+    console.error("Chart.js 未載入！");
+    return;
+  }
+
   trendChart = new Chart(ctx, {
     type: "line",
     data: {
@@ -194,10 +218,10 @@ function initChart() {
         data: [],
         borderColor: "#00e676",
         backgroundColor: "rgba(0, 230, 118, 0.1)",
-        borderWidth: 1.5,
+        borderWidth: 2,
         fill: true,
         tension: 0.2,
-        pointRadius: 0 // 隱藏雜亂的點點，讓近千筆數據的曲線看起來極度流暢
+        pointRadius: 3
       }]
     },
     options: {
