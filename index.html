@@ -4,17 +4,18 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>個人全資產投資組合 Dashboard</title>
+  <!-- Chart.js 官方穩定 CDN -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
   <style>
     :root {
-      --bg: #0b0d14;
-      --card-bg: #121622;
-      --border: #1e2638;
+      --bg: #0b0f19;
+      --card-bg: #151c2c;
+      --border: #232d42;
       --text: #f1f5f9;
-      --muted: #8292ab;
+      --muted: #64748b;
       --red: #ff4d4d;
       --green: #00e676;
-      --cyan: #00d2ff;
+      --accent: #00d2ff;
     }
 
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -39,7 +40,7 @@
     .stat-card {
       background: var(--card-bg);
       border: 1px solid var(--border);
-      border-radius: 16px;
+      border-radius: 12px;
       padding: 20px;
       display: flex;
       flex-direction: column;
@@ -47,11 +48,11 @@
     }
 
     .stat-title { font-size: 13px; color: var(--muted); margin-bottom: 8px; }
-    .stat-value { font-size: 28px; font-weight: 800; }
+    .stat-value { font-size: 28px; font-weight: 800; letter-spacing: -0.5px; }
     .stat-sub { font-size: 12px; color: var(--muted); margin-top: 6px; display: flex; justify-content: space-between; align-items: center; }
 
-    .val-down { color: var(--red) !important; }
-    .val-up { color: var(--green) !important; }
+    .val-down { color: var(--red); }
+    .val-up { color: var(--green); }
 
     .btn-refresh {
       background: #3b82f6;
@@ -63,18 +64,18 @@
       font-weight: bold;
       cursor: pointer;
     }
+    .btn-refresh:hover { background: #2563eb; }
 
-    /* 大圖表區域 */
     .chart-card {
       background: var(--card-bg);
       border: 1px solid var(--border);
-      border-radius: 20px;
+      border-radius: 16px;
       padding: 24px;
       margin-bottom: 24px;
     }
 
     .chart-header { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 16px; }
-    .chart-tag { font-size: 11px; letter-spacing: 1.5px; color: var(--cyan); font-weight: bold; text-transform: uppercase; margin-bottom: 4px; }
+    .chart-tag { font-size: 11px; letter-spacing: 1.5px; color: var(--accent); font-weight: bold; text-transform: uppercase; margin-bottom: 4px; }
     .chart-title { font-size: 22px; font-weight: bold; }
     .chart-total { font-size: 32px; font-weight: 800; text-align: right; }
     .chart-wrapper { position: relative; height: 320px; width: 100%; }
@@ -82,7 +83,7 @@
     .form-card {
       background: var(--card-bg);
       border: 1px solid var(--border);
-      border-radius: 16px;
+      border-radius: 12px;
       padding: 20px;
       margin-bottom: 24px;
     }
@@ -111,65 +112,78 @@
       cursor: pointer;
       border: none;
     }
+    button.btn-add:hover { background: #1d4ed8; }
 
     .section-title { font-size: 20px; margin-bottom: 16px; }
 
-    /* 高質感個股卡片 */
     .holdings-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-      gap: 20px;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 16px;
     }
 
     .stock-card {
       background: var(--card-bg);
       border: 1px solid var(--border);
-      border-radius: 20px;
-      padding: 24px 20px 12px 20px;
+      border-radius: 12px;
+      padding: 18px;
       display: flex;
       flex-direction: column;
-      position: relative;
-      overflow: hidden;
+      justify-content: space-between;
     }
 
-    .card-top {
+    .stock-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+    .stock-symbol { font-size: 18px; font-weight: bold; }
+    .badge { font-size: 11px; padding: 2px 8px; border-radius: 4px; background: #232d42; }
+
+    .stock-info {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      font-size: 13px;
+      margin-bottom: 12px;
+    }
+
+    .pnl-box {
+      grid-column: span 2;
+      border-top: 1px dashed var(--border);
+      padding-top: 8px;
       display: flex;
       justify-content: space-between;
-      align-items: flex-start;
-      margin-bottom: 16px;
+      font-weight: bold;
     }
 
-    .card-symbol { font-size: 20px; font-weight: 800; color: var(--cyan); line-height: 1.2; }
-    .card-name { font-size: 18px; font-weight: 700; color: #fff; margin-top: 2px; }
-    .card-badge { font-size: 11px; background: #1e2638; color: #94a3b8; padding: 4px 10px; border-radius: 20px; font-weight: 600; }
-
-    .card-big-price { font-size: 34px; font-weight: 900; letter-spacing: -1px; line-height: 1.1; color: #ffffff; }
-    .card-price-sub { font-size: 12px; color: var(--muted); margin-top: 4px; margin-bottom: 20px; }
-
-    .detail-row { display: flex; justify-content: space-between; font-size: 14px; margin-bottom: 8px; color: #94a3b8; }
-    .detail-value { font-weight: 700; color: #f1f5f9; }
-
-    .divider { height: 1px; background: var(--border); margin: 16px 0; }
-
-    .profit-section { margin-bottom: 12px; }
-    .profit-main { font-size: 22px; font-weight: 800; }
-    .profit-sub { font-size: 16px; font-weight: 700; margin-top: 2px; }
-
-    .sparkline-wrapper { height: 70px; width: 100%; margin-top: 8px; }
-
-    .card-footer-action { display: flex; justify-content: flex-end; margin-top: 8px; }
-    .btn-del { background: transparent; border: none; color: #64748b; font-size: 12px; cursor: pointer; }
-    .btn-del:hover { color: var(--red); }
+    .btn-del {
+      background: #ef4444;
+      padding: 6px;
+      font-size: 12px;
+      cursor: pointer;
+      border: none;
+      color: #fff;
+      border-radius: 6px;
+    }
 
     .ticker-bar {
-      position: fixed; bottom: 0; left: 0; width: 100%; height: 40px; background: #060911;
-      border-top: 1px solid var(--border); overflow: hidden; display: flex; align-items: center; z-index: 100;
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      width: 100%;
+      height: 40px;
+      background: #060911;
+      border-top: 1px solid var(--border);
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      z-index: 100;
     }
 
     .ticker-track { display: flex; white-space: nowrap; animation: marquee 25s linear infinite; }
     .ticker-item { margin-right: 32px; font-size: 13px; font-family: monospace; }
 
-    @keyframes marquee { 0% { transform: translateX(0); } 100% { transform: translateX(-50%); } }
+    @keyframes marquee {
+      0% { transform: translateX(0); }
+      100% { transform: translateX(-50%); }
+    }
   </style>
 </head>
 <body>
@@ -181,7 +195,7 @@
       <div class="stat-sub" id="totalPnlRate">0.00%</div>
     </div>
     <div class="stat-card">
-      <div class="stat-title">總投入成本 (NT)</div>
+      <div class="stat-title">總投入成本</div>
       <div class="stat-value" id="totalCost">$0</div>
       <div class="stat-sub">台幣估算</div>
     </div>
@@ -200,7 +214,6 @@
     </div>
   </div>
 
-  <!-- 重回歸的大圖表區域 -->
   <div class="chart-card">
     <div class="chart-header">
       <div>
