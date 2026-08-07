@@ -52,7 +52,7 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 });
 
-// 每秒動態執行的倒數計時
+// 每秒動態執行的倒數計時器 (完美相容 id="countdownText")
 function startCountdown() {
   if (timerInterval) clearInterval(timerInterval);
   countdownSeconds = 60;
@@ -60,12 +60,10 @@ function startCountdown() {
   timerInterval = setInterval(async () => {
     countdownSeconds--;
 
-    // 試著對應頁面上可能存在的倒數元素 ID
-    const timerEl = document.getElementById("timerCount") || 
-                    document.getElementById("timer") || 
-                    document.getElementById("countdown");
-    if (timerEl) {
-      timerEl.textContent = countdownSeconds;
+    // 精準對應你的 HTML ID: countdownText
+    const countdownEl = document.getElementById("countdownText");
+    if (countdownEl) {
+      countdownEl.textContent = `${countdownSeconds} 秒後更新`;
     }
 
     // 倒數到 0 秒：抓取新報價，並歸零重新計時
@@ -76,9 +74,9 @@ function startCountdown() {
   }, 1000);
 }
 
-// 全域函數：手動點擊「立即更新」
+// 提供 HTML onclick="manualRefresh()" 呼叫的全域函數
 async function manualRefresh() {
-  const refreshBtn = document.getElementById("refreshBtn") || (typeof event !== 'undefined' ? event?.currentTarget : null);
+  const refreshBtn = document.querySelector(".btn-refresh") || (typeof event !== 'undefined' ? event?.currentTarget : null);
   if (refreshBtn) {
     refreshBtn.disabled = true;
     refreshBtn.textContent = "⏳ 更新中...";
@@ -86,17 +84,17 @@ async function manualRefresh() {
 
   // 手動更新後重置倒數秒數
   countdownSeconds = 60;
-  const timerEl = document.getElementById("timerCount") || 
-                  document.getElementById("timer") || 
-                  document.getElementById("countdown");
-  if (timerEl) timerEl.textContent = countdownSeconds;
+  const countdownEl = document.getElementById("countdownText");
+  if (countdownEl) {
+    countdownEl.textContent = "60 秒後更新";
+  }
 
   await fetchData();
   await fetchWeekHistory();
 
   if (refreshBtn) {
     refreshBtn.disabled = false;
-    refreshBtn.textContent = "🔄 立即更新";
+    refreshBtn.textContent = "立即更新";
   }
 }
 window.manualRefresh = manualRefresh;
