@@ -52,7 +52,7 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 });
 
-// 每秒動態執行的倒數計時器 (完美相容 id="countdownText")
+// 每秒動態執行的倒數計時器
 function startCountdown() {
   if (timerInterval) clearInterval(timerInterval);
   countdownSeconds = 60;
@@ -60,13 +60,11 @@ function startCountdown() {
   timerInterval = setInterval(async () => {
     countdownSeconds--;
 
-    // 精準對應你的 HTML ID: countdownText
     const countdownEl = document.getElementById("countdownText");
     if (countdownEl) {
       countdownEl.textContent = `${countdownSeconds} 秒後更新`;
     }
 
-    // 倒數到 0 秒：抓取新報價，並歸零重新計時
     if (countdownSeconds <= 0) {
       countdownSeconds = 60;
       await fetchData();
@@ -74,7 +72,7 @@ function startCountdown() {
   }, 1000);
 }
 
-// 提供 HTML onclick="manualRefresh()" 呼叫的全域函數
+// 手動更新全域函數
 async function manualRefresh() {
   const refreshBtn = document.querySelector(".btn-refresh") || (typeof event !== 'undefined' ? event?.currentTarget : null);
   if (refreshBtn) {
@@ -82,7 +80,6 @@ async function manualRefresh() {
     refreshBtn.textContent = "⏳ 更新中...";
   }
 
-  // 手動更新後重置倒數秒數
   countdownSeconds = 60;
   const countdownEl = document.getElementById("countdownText");
   if (countdownEl) {
@@ -154,14 +151,39 @@ async function fetchData() {
   renderAll();
 }
 
-// 取得 7 天資產走勢紀錄
+// 本地時區轉換輔助函數 (自動將時間轉為當前裝置時區的 月/日 時:分)
+function formatToLocalTime(timeStr) {
+  if (!timeStr) return "";
+
+  let d = new Date(timeStr);
+
+  // 若為純數字時間戳記字串
+  if (isNaN(d.getTime()) && !isNaN(Number(timeStr))) {
+    d = new Date(Number(timeStr));
+  }
+
+  // 如果成功解析為合法 Date 物件
+  if (!isNaN(d.getTime())) {
+    const month = d.getMonth() + 1;
+    const date = d.getDate();
+    const hours = String(d.getHours()).padStart(2, '0');
+    const minutes = String(d.getMinutes()).padStart(2, '0');
+    return `${month}/${date} ${hours}:${minutes}`;
+  }
+
+  // 備用防呆：若 Worker 本身已回傳 "MM/DD HH:mm" 文字且非標準格式，則原樣回傳
+  return timeStr;
+}
+
+// 取得 7 天資產走勢紀錄並修正時區顯示
 async function fetchWeekHistory() {
   try {
     const res = await fetch(`${WORKER_URL}?action=history`);
     if (res.ok) {
       const history = await res.json();
       if (Array.isArray(history) && history.length > 0) {
-        const labels = history.map(h => h.time);
+        // 修正：將 Worker 回傳的時間轉為本地時間格式
+        const labels = history.map(h => formatToLocalTime(h.time));
         const values = history.map(h => h.val);
         updateChart(labels, values);
       }
