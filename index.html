@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>個人投資組合 Dashboard</title>
+  <title>個人全資產投資組合 Dashboard</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
   <style>
     :root {
@@ -64,6 +64,21 @@
       cursor: pointer;
     }
 
+    /* 大圖表區域 */
+    .chart-card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 24px;
+      margin-bottom: 24px;
+    }
+
+    .chart-header { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 16px; }
+    .chart-tag { font-size: 11px; letter-spacing: 1.5px; color: var(--cyan); font-weight: bold; text-transform: uppercase; margin-bottom: 4px; }
+    .chart-title { font-size: 22px; font-weight: bold; }
+    .chart-total { font-size: 32px; font-weight: 800; text-align: right; }
+    .chart-wrapper { position: relative; height: 320px; width: 100%; }
+
     .form-card {
       background: var(--card-bg);
       border: 1px solid var(--border);
@@ -99,7 +114,7 @@
 
     .section-title { font-size: 20px; margin-bottom: 16px; }
 
-    /* 高質感個股卡片 - 參考圖片設計 */
+    /* 高質感個股卡片 */
     .holdings-grid {
       display: grid;
       grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
@@ -124,122 +139,37 @@
       margin-bottom: 16px;
     }
 
-    .card-symbol {
-      font-size: 20px;
-      font-weight: 800;
-      color: var(--cyan);
-      line-height: 1.2;
-    }
+    .card-symbol { font-size: 20px; font-weight: 800; color: var(--cyan); line-height: 1.2; }
+    .card-name { font-size: 18px; font-weight: 700; color: #fff; margin-top: 2px; }
+    .card-badge { font-size: 11px; background: #1e2638; color: #94a3b8; padding: 4px 10px; border-radius: 20px; font-weight: 600; }
 
-    .card-name {
-      font-size: 18px;
-      font-weight: 700;
-      color: #fff;
-      margin-top: 2px;
-    }
+    .card-big-price { font-size: 34px; font-weight: 900; letter-spacing: -1px; line-height: 1.1; color: #ffffff; }
+    .card-price-sub { font-size: 12px; color: var(--muted); margin-top: 4px; margin-bottom: 20px; }
 
-    .card-badge {
-      font-size: 11px;
-      background: #1e2638;
-      color: #94a3b8;
-      padding: 4px 10px;
-      border-radius: 20px;
-      font-weight: 600;
-    }
+    .detail-row { display: flex; justify-content: space-between; font-size: 14px; margin-bottom: 8px; color: #94a3b8; }
+    .detail-value { font-weight: 700; color: #f1f5f9; }
 
-    .card-big-price {
-      font-size: 34px;
-      font-weight: 900;
-      letter-spacing: -1px;
-      line-height: 1.1;
-      color: #ffffff;
-    }
+    .divider { height: 1px; background: var(--border); margin: 16px 0; }
 
-    .card-price-sub {
-      font-size: 12px;
-      color: var(--muted);
-      margin-top: 4px;
-      margin-bottom: 20px;
-    }
+    .profit-section { margin-bottom: 12px; }
+    .profit-main { font-size: 22px; font-weight: 800; }
+    .profit-sub { font-size: 16px; font-weight: 700; margin-top: 2px; }
 
-    .detail-row {
-      display: flex;
-      justify-content: space-between;
-      font-size: 14px;
-      margin-bottom: 8px;
-      color: #94a3b8;
-    }
+    .sparkline-wrapper { height: 70px; width: 100%; margin-top: 8px; }
 
-    .detail-value {
-      font-weight: 700;
-      color: #f1f5f9;
-    }
-
-    .divider {
-      height: 1px;
-      background: var(--border);
-      margin: 16px 0;
-    }
-
-    .profit-section {
-      margin-bottom: 12px;
-    }
-
-    .profit-main {
-      font-size: 22px;
-      font-weight: 800;
-    }
-
-    .profit-sub {
-      font-size: 16px;
-      font-weight: 700;
-      margin-top: 2px;
-    }
-
-    /* 迷你走勢圖容器 */
-    .sparkline-wrapper {
-      height: 70px;
-      width: 100%;
-      margin-top: 8px;
-    }
-
-    .card-footer-action {
-      display: flex;
-      justify-content: flex-end;
-      margin-top: 8px;
-    }
-
-    .btn-del {
-      background: transparent;
-      border: none;
-      color: #64748b;
-      font-size: 12px;
-      cursor: pointer;
-    }
-
+    .card-footer-action { display: flex; justify-content: flex-end; margin-top: 8px; }
+    .btn-del { background: transparent; border: none; color: #64748b; font-size: 12px; cursor: pointer; }
     .btn-del:hover { color: var(--red); }
 
     .ticker-bar {
-      position: fixed;
-      bottom: 0;
-      left: 0;
-      width: 100%;
-      height: 40px;
-      background: #060911;
-      border-top: 1px solid var(--border);
-      overflow: hidden;
-      display: flex;
-      align-items: center;
-      z-index: 100;
+      position: fixed; bottom: 0; left: 0; width: 100%; height: 40px; background: #060911;
+      border-top: 1px solid var(--border); overflow: hidden; display: flex; align-items: center; z-index: 100;
     }
 
     .ticker-track { display: flex; white-space: nowrap; animation: marquee 25s linear infinite; }
     .ticker-item { margin-right: 32px; font-size: 13px; font-family: monospace; }
 
-    @keyframes marquee {
-      0% { transform: translateX(0); }
-      100% { transform: translateX(-50%); }
-    }
+    @keyframes marquee { 0% { transform: translateX(0); } 100% { transform: translateX(-50%); } }
   </style>
 </head>
 <body>
@@ -267,6 +197,23 @@
         <span id="countdownText">60 秒後更新</span>
         <button class="btn-refresh" onclick="manualRefresh()">立即更新</button>
       </div>
+    </div>
+  </div>
+
+  <!-- 重回歸的大圖表區域 -->
+  <div class="chart-card">
+    <div class="chart-header">
+      <div>
+        <div class="chart-tag">Asset Portfolio Trend</div>
+        <div class="chart-title">全資產總市值走勢</div>
+      </div>
+      <div>
+        <div class="stat-title" style="text-align:right;">目前總市值 (NT)</div>
+        <div class="chart-total" id="totalMarketValue">$0</div>
+      </div>
+    </div>
+    <div class="chart-wrapper">
+      <canvas id="trendChart"></canvas>
     </div>
   </div>
 
