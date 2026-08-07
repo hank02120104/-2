@@ -9,9 +9,18 @@ document.addEventListener("DOMContentLoaded", () => {
   initChart();
   renderAll();
   
-  // 網頁一載入，先同步持股並拉取數據
+  // 網頁開起來時先更新一次
   syncHoldingsAndRefresh();
 
+  // 綁定「立即更新」按鈕點擊事件
+  const refreshBtn = document.getElementById("refreshBtn");
+  if (refreshBtn) {
+    refreshBtn.addEventListener("click", () => {
+      syncHoldingsAndRefresh();
+    });
+  }
+
+  // 綁定表單新增股票事件
   const form = document.getElementById("addForm");
   if (form) {
     form.addEventListener("submit", (e) => {
@@ -40,10 +49,17 @@ document.addEventListener("DOMContentLoaded", () => {
 
 // 手動或自動同步持股到 Worker 並重新整理
 async function syncHoldingsAndRefresh() {
+  const refreshBtn = document.getElementById("refreshBtn");
+  if (refreshBtn) {
+    refreshBtn.disabled = true;
+    refreshBtn.textContent = "⏳ 更新中...";
+  }
+
   localStorage.setItem("myHoldings", JSON.stringify(holdings));
   
   if (holdings.length > 0) {
     try {
+      // 1. 傳送持股給 Worker，並讓 Worker 立刻寫入一筆歷史走勢點
       await fetch(`${WORKER_URL}?action=sync_holdings`, {
         method: "POST",
         headers: { "Content-Type": "text/plain" },
@@ -54,8 +70,16 @@ async function syncHoldingsAndRefresh() {
     }
   }
 
+  // 2. 抓取最新股價
   await fetchData();
+  
+  // 3. 抓取並繪製歷史走勢圖
   await fetchWeekHistory();
+
+  if (refreshBtn) {
+    refreshBtn.disabled = false;
+    refreshBtn.textContent = "🔄 立即更新";
+  }
 }
 
 function saveAndRefresh() {
