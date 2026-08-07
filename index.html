@@ -3,19 +3,18 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>個人全資產投資組合 Dashboard</title>
-  <!-- Chart.js 官方穩定 CDN -->
+  <title>個人投資組合 Dashboard</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
   <style>
     :root {
-      --bg: #0b0f19;
-      --card-bg: #151c2c;
-      --border: #232d42;
+      --bg: #0b0d14;
+      --card-bg: #121622;
+      --border: #1e2638;
       --text: #f1f5f9;
-      --muted: #64748b;
+      --muted: #8292ab;
       --red: #ff4d4d;
       --green: #00e676;
-      --accent: #00d2ff;
+      --cyan: #00d2ff;
     }
 
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -40,7 +39,7 @@
     .stat-card {
       background: var(--card-bg);
       border: 1px solid var(--border);
-      border-radius: 12px;
+      border-radius: 16px;
       padding: 20px;
       display: flex;
       flex-direction: column;
@@ -48,11 +47,11 @@
     }
 
     .stat-title { font-size: 13px; color: var(--muted); margin-bottom: 8px; }
-    .stat-value { font-size: 28px; font-weight: 800; letter-spacing: -0.5px; }
+    .stat-value { font-size: 28px; font-weight: 800; }
     .stat-sub { font-size: 12px; color: var(--muted); margin-top: 6px; display: flex; justify-content: space-between; align-items: center; }
 
-    .val-down { color: var(--red); }
-    .val-up { color: var(--green); }
+    .val-down { color: var(--red) !important; }
+    .val-up { color: var(--green) !important; }
 
     .btn-refresh {
       background: #3b82f6;
@@ -64,26 +63,11 @@
       font-weight: bold;
       cursor: pointer;
     }
-    .btn-refresh:hover { background: #2563eb; }
-
-    .chart-card {
-      background: var(--card-bg);
-      border: 1px solid var(--border);
-      border-radius: 16px;
-      padding: 24px;
-      margin-bottom: 24px;
-    }
-
-    .chart-header { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 16px; }
-    .chart-tag { font-size: 11px; letter-spacing: 1.5px; color: var(--accent); font-weight: bold; text-transform: uppercase; margin-bottom: 4px; }
-    .chart-title { font-size: 22px; font-weight: bold; }
-    .chart-total { font-size: 32px; font-weight: 800; text-align: right; }
-    .chart-wrapper { position: relative; height: 320px; width: 100%; }
 
     .form-card {
       background: var(--card-bg);
       border: 1px solid var(--border);
-      border-radius: 12px;
+      border-radius: 16px;
       padding: 20px;
       margin-bottom: 24px;
     }
@@ -112,56 +96,128 @@
       cursor: pointer;
       border: none;
     }
-    button.btn-add:hover { background: #1d4ed8; }
 
     .section-title { font-size: 20px; margin-bottom: 16px; }
 
+    /* 高質感個股卡片 - 參考圖片設計 */
     .holdings-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-      gap: 16px;
+      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+      gap: 20px;
     }
 
     .stock-card {
       background: var(--card-bg);
       border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 18px;
+      border-radius: 20px;
+      padding: 24px 20px 12px 20px;
       display: flex;
       flex-direction: column;
-      justify-content: space-between;
+      position: relative;
+      overflow: hidden;
     }
 
-    .stock-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
-    .stock-symbol { font-size: 18px; font-weight: bold; }
-    .badge { font-size: 11px; padding: 2px 8px; border-radius: 4px; background: #232d42; }
+    .card-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 16px;
+    }
 
-    .stock-info {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 8px;
-      font-size: 13px;
+    .card-symbol {
+      font-size: 20px;
+      font-weight: 800;
+      color: var(--cyan);
+      line-height: 1.2;
+    }
+
+    .card-name {
+      font-size: 18px;
+      font-weight: 700;
+      color: #fff;
+      margin-top: 2px;
+    }
+
+    .card-badge {
+      font-size: 11px;
+      background: #1e2638;
+      color: #94a3b8;
+      padding: 4px 10px;
+      border-radius: 20px;
+      font-weight: 600;
+    }
+
+    .card-big-price {
+      font-size: 34px;
+      font-weight: 900;
+      letter-spacing: -1px;
+      line-height: 1.1;
+      color: #ffffff;
+    }
+
+    .card-price-sub {
+      font-size: 12px;
+      color: var(--muted);
+      margin-top: 4px;
+      margin-bottom: 20px;
+    }
+
+    .detail-row {
+      display: flex;
+      justify-content: space-between;
+      font-size: 14px;
+      margin-bottom: 8px;
+      color: #94a3b8;
+    }
+
+    .detail-value {
+      font-weight: 700;
+      color: #f1f5f9;
+    }
+
+    .divider {
+      height: 1px;
+      background: var(--border);
+      margin: 16px 0;
+    }
+
+    .profit-section {
       margin-bottom: 12px;
     }
 
-    .pnl-box {
-      grid-column: span 2;
-      border-top: 1px dashed var(--border);
-      padding-top: 8px;
+    .profit-main {
+      font-size: 22px;
+      font-weight: 800;
+    }
+
+    .profit-sub {
+      font-size: 16px;
+      font-weight: 700;
+      margin-top: 2px;
+    }
+
+    /* 迷你走勢圖容器 */
+    .sparkline-wrapper {
+      height: 70px;
+      width: 100%;
+      margin-top: 8px;
+    }
+
+    .card-footer-action {
       display: flex;
-      justify-content: space-between;
-      font-weight: bold;
+      justify-content: flex-end;
+      margin-top: 8px;
     }
 
     .btn-del {
-      background: #ef4444;
-      padding: 6px;
+      background: transparent;
+      border: none;
+      color: #64748b;
       font-size: 12px;
       cursor: pointer;
-      border: none;
-      color: #fff;
-      border-radius: 6px;
     }
+
+    .btn-del:hover { color: var(--red); }
 
     .ticker-bar {
       position: fixed;
@@ -195,7 +251,7 @@
       <div class="stat-sub" id="totalPnlRate">0.00%</div>
     </div>
     <div class="stat-card">
-      <div class="stat-title">總投入成本</div>
+      <div class="stat-title">總投入成本 (NT)</div>
       <div class="stat-value" id="totalCost">$0</div>
       <div class="stat-sub">台幣估算</div>
     </div>
@@ -211,22 +267,6 @@
         <span id="countdownText">60 秒後更新</span>
         <button class="btn-refresh" onclick="manualRefresh()">立即更新</button>
       </div>
-    </div>
-  </div>
-
-  <div class="chart-card">
-    <div class="chart-header">
-      <div>
-        <div class="chart-tag">Asset Portfolio Trend</div>
-        <div class="chart-title">全資產總市值走勢</div>
-      </div>
-      <div>
-        <div class="stat-title" style="text-align:right;">目前總市值 (NT)</div>
-        <div class="chart-total" id="totalMarketValue">$0</div>
-      </div>
-    </div>
-    <div class="chart-wrapper">
-      <canvas id="trendChart"></canvas>
     </div>
   </div>
 
