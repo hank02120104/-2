@@ -9,25 +9,33 @@ document.addEventListener("DOMContentLoaded", () => {
   initChart();
   renderAll();
   
-  // 網頁開啟時：抓即時報價 + 載入一次歷史走勢圖
+  // 網頁初始化：載入即時股價與歷史走勢圖
   fetchData();
   fetchWeekHistory();
 
-  // 1. 點擊「立即更新」：只更新目前顯示的股價與總資產（極速，不碰歷史走勢圖）
+  // 核心修復：啟動 1 分鐘 (60000ms) 自動更新機制
+  setInterval(() => {
+    console.log("[Auto Refresh] 自動刷新即時股價...");
+    fetchData();
+  }, 60000);
+
+  // 綁定「立即更新」按鈕
   const refreshBtn = document.getElementById("refreshBtn");
   if (refreshBtn) {
     refreshBtn.addEventListener("click", async () => {
       refreshBtn.disabled = true;
+      const originalText = refreshBtn.textContent;
       refreshBtn.textContent = "⏳ 更新中...";
       
-      await fetchData(); // 只抓股價，不抓走勢
+      await fetchData(); // 即時刷報價
+      await fetchWeekHistory(); // 同步刷最新歷史紀錄
 
       refreshBtn.disabled = false;
-      refreshBtn.textContent = "🔄 立即更新";
+      refreshBtn.textContent = originalText;
     });
   }
 
-  // 2. 表單新增股票：同步持股給 Worker，並刷報價
+  // 綁定表單新增/修改股票事件
   const form = document.getElementById("addForm");
   if (form) {
     form.addEventListener("submit", async (e) => {
@@ -37,6 +45,11 @@ document.addEventListener("DOMContentLoaded", () => {
       const market = document.getElementById("market").value;
       const cost = parseFloat(document.getElementById("cost").value);
       const qty = parseFloat(document.getElementById("qty").value);
+
+      if (!symbol || isNaN(cost) || isNaN(qty)) {
+        alert("請填寫正確的股票代號、成本與股數");
+        return;
+      }
 
       if (market === "TW" && !symbol.includes(".")) symbol += ".TW";
       if (market === "TWO" && !symbol.includes(".")) symbol += ".TWO";
@@ -48,13 +61,13 @@ document.addEventListener("DOMContentLoaded", () => {
         holdings.push({ symbol, name, market, cost, qty });
       }
 
-      saveAndSync();
+      await saveAndSync();
       form.reset();
     });
   }
 });
 
-// 持股異動（新增/刪除）時同步備份給 Worker
+// 儲存至本地並同步給 Cloudflare Worker
 async function saveAndSync() {
   localStorage.setItem("myHoldings", JSON.stringify(holdings));
   renderAll();
@@ -67,11 +80,11 @@ async function saveAndSync() {
         body: JSON.stringify(holdings)
       });
     } catch (e) {
-      console.error("同步持股失敗", e);
+      console.error("同步持股失敗:", e);
     }
   }
   
-  fetchData();
+  await fetchData();
 }
 
 function deleteStock(symbol) {
@@ -81,7 +94,7 @@ function deleteStock(symbol) {
   }
 }
 
-// 只負責抓取最新股價並更新畫面的卡片與數字
+// 抓取即時報價並繪製畫面
 async function fetchData() {
   updateTime();
   if (holdings.length === 0) {
@@ -101,28 +114,30 @@ async function fetchData() {
         if (q.symbol === "USDTWD=X") usdTwdRate = q.regularMarketPrice || usdTwdRate;
         else liveQuotes[q.symbol] = q.regularMarketPrice;
       });
+    } else {
+      console.error("API 回傳錯誤 HTTP Code:", res.status);
     }
   } catch (e) {
-    console.error("抓取失敗", e);
+    console.error("抓取股價失敗:", e);
   }
 
   renderAll();
 }
 
-// 讀取 Worker 每 5 分鐘自動記錄的走勢歷史
+// 取得 7 天資產走勢紀錄
 async function fetchWeekHistory() {
   try {
     const res = await fetch(`${WORKER_URL}?action=history`);
     if (res.ok) {
       const history = await res.json();
-      if (history && history.length > 0) {
+      if (Array.isArray(history) && history.length > 0) {
         const labels = history.map(h => h.time);
         const values = history.map(h => h.val);
         updateChart(labels, values);
       }
     }
   } catch (e) {
-    console.error("無法取得歷史紀錄", e);
+    console.error("無法取得歷史紀錄:", e);
   }
 }
 
@@ -135,50 +150,51 @@ function renderAll() {
   let tickerHtml = "";
 
   const grid = document.getElementById("holdingsGrid");
-  if (!grid) return;
-  grid.innerHTML = "";
+  if (grid) {
+    grid.innerHTML = "";
 
-  holdings.forEach(item => {
-    const price = liveQuotes[item.symbol] !== undefined ? liveQuotes[item.symbol] : item.cost;
-    const rate = item.market === "US" ? usdTwdRate : 1;
+    holdings.forEach(item => {
+      const price = liveQuotes[item.symbol] !== undefined ? liveQuotes[item.symbol] : item.cost;
+      const rate = item.market === "US" ? usdTwdRate : 1;
 
-    const valTwd = price * item.qty * rate;
-    const costTwd = item.cost * item.qty * rate;
-    const pnlTwd = valTwd - costTwd;
-    const pnlRate = item.cost > 0 ? ((price - item.cost) / item.cost) * 100 : 0;
+      const valTwd = price * item.qty * rate;
+      const costTwd = item.cost * item.qty * rate;
+      const pnlTwd = valTwd - costTwd;
+      const pnlRate = item.cost > 0 ? ((price - item.cost) / item.cost) * 100 : 0;
 
-    totalValueTwd += valTwd;
-    totalCostTwd += costTwd;
+      totalValueTwd += valTwd;
+      totalCostTwd += costTwd;
 
-    const isProfit = pnlTwd >= 0;
-    const colorClass = isProfit ? "val-up" : "val-down";
-    const sign = isProfit ? "+" : "";
+      const isProfit = pnlTwd >= 0;
+      const colorClass = isProfit ? "val-up" : "val-down";
+      const sign = isProfit ? "+" : "";
 
-    const card = document.createElement("div");
-    card.className = "stock-card";
-    card.innerHTML = `
-      <div>
-        <div class="stock-header">
-          <span class="stock-symbol">${item.name} (${item.symbol})</span>
-          <span class="badge">${item.market}</span>
-        </div>
-        <div class="stock-info">
-          <div>現價: $${price.toFixed(2)}</div>
-          <div>成本: $${item.cost.toFixed(2)}</div>
-          <div>股數: ${item.qty}</div>
-          <div>市值(NT): $${Math.round(valTwd).toLocaleString()}</div>
-          <div class="pnl-box ${colorClass}">
-            <span>損益:</span>
-            <span>${sign}$${Math.round(pnlTwd).toLocaleString()} (${sign}${pnlRate.toFixed(2)}%)</span>
+      const card = document.createElement("div");
+      card.className = "stock-card";
+      card.innerHTML = `
+        <div>
+          <div class="stock-header">
+            <span class="stock-symbol">${item.name || item.symbol} (${item.symbol})</span>
+            <span class="badge">${item.market}</span>
+          </div>
+          <div class="stock-info">
+            <div>現價: $${price.toFixed(2)}</div>
+            <div>成本: $${item.cost.toFixed(2)}</div>
+            <div>股數: ${item.qty}</div>
+            <div>市值(NT): $${Math.round(valTwd).toLocaleString()}</div>
+            <div class="pnl-box ${colorClass}">
+              <span>損益:</span>
+              <span>${sign}$${Math.round(pnlTwd).toLocaleString()} (${sign}${pnlRate.toFixed(2)}%)</span>
+            </div>
           </div>
         </div>
-      </div>
-      <button class="btn-del" onclick="deleteStock('${item.symbol}')">刪除持股</button>
-    `;
-    grid.appendChild(card);
+        <button class="btn-del" onclick="deleteStock('${item.symbol}')">刪除持股</button>
+      `;
+      grid.appendChild(card);
 
-    tickerHtml += `<span class="ticker-item ${colorClass}">${item.symbol} $${price.toFixed(2)} (${sign}$${Math.round(pnlTwd).toLocaleString()})</span>`;
-  });
+      tickerHtml += `<span class="ticker-item ${colorClass}">${item.symbol} $${price.toFixed(2)} (${sign}$${Math.round(pnlTwd).toLocaleString()})</span>`;
+    });
+  }
 
   const totalPnl = totalValueTwd - totalCostTwd;
   const totalPnlRate = totalCostTwd > 0 ? (totalPnl / totalCostTwd) * 100 : 0;
