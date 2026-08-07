@@ -11,6 +11,7 @@ document.addEventListener("DOMContentLoaded", () => {
   renderAll();
   fetchData();
 
+  // 倒數計時器
   setInterval(() => {
     countdown--;
     const el = document.getElementById("countdownText");
@@ -21,6 +22,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }, 1000);
 
+  // 新增持股表單
   const form = document.getElementById("addForm");
   if (form) {
     form.addEventListener("submit", (e) => {
@@ -67,8 +69,8 @@ function deleteStock(symbol) {
   }
 }
 
-// 使用 Script 注入（JSONP）徹底繞過 CORS 與 file:// 限制
-function fetchData() {
+// 採用穩定的抓取機制 (透過公共 API 轉接)
+async function fetchData() {
   updateTime();
   if (holdings.length === 0) {
     renderAll();
@@ -79,37 +81,28 @@ function fetchData() {
   if (!symbols.includes("USDTWD=X")) symbols.push("USDTWD=X");
 
   const query = encodeURIComponent(symbols.join(","));
-  const scriptId = "yahoo-finance-script";
+  const primaryApi = `https://api.allorigins.win/raw?url=${encodeURIComponent('https://query1.finance.yahoo.com/v7/finance/quote?symbols=' + query)}`;
 
-  // 移除舊腳本
-  const oldScript = document.getElementById(scriptId);
-  if (oldScript) oldScript.remove();
-
-  // 建立動態跨域 Script
-  const script = document.createElement("script");
-  script.id = scriptId;
-  script.src = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${query}&callback=handleYahooData`;
-  
-  script.onerror = () => {
-    console.warn("無法取得即時資料，請確認網路狀況。");
-    renderAll();
-  };
-
-  document.body.appendChild(script);
-}
-
-// Yahoo 回傳數據處理函式
-window.handleYahooData = function(data) {
-  const results = data.quoteResponse?.result || [];
-  results.forEach(q => {
-    if (q.symbol === "USDTWD=X") {
-      usdTwdRate = q.regularMarketPrice || usdTwdRate;
-    } else {
-      liveQuotes[q.symbol] = q.regularMarketPrice;
+  try {
+    const res = await fetch(primaryApi);
+    if (res.ok) {
+      const data = await res.json();
+      const results = data.quoteResponse?.result || [];
+      
+      results.forEach(q => {
+        if (q.symbol === "USDTWD=X") {
+          usdTwdRate = q.regularMarketPrice || usdTwdRate;
+        } else {
+          liveQuotes[q.symbol] = q.regularMarketPrice;
+        }
+      });
     }
-  });
+  } catch (e) {
+    console.warn("無法取得即時資料，將維持上一次成功連線的價格或成本價");
+  }
+
   renderAll();
-};
+}
 
 function renderAll() {
   const rateEl = document.getElementById("usdTwdRate");
@@ -147,7 +140,7 @@ function renderAll() {
 
     let priceDisplay = `$${price.toFixed(2)}`;
     if (!hasLivePrice) {
-      priceDisplay = `<span style="color:#f59e0b;" title="未抓到價錢">$${price.toFixed(2)} (暫用成本)</span>`;
+      priceDisplay = `<span style="color:#f59e0b;" title="使用成本估算">$${price.toFixed(2)}</span>`;
     }
 
     const card = document.createElement("div");
@@ -230,10 +223,7 @@ function initChart() {
   if (!canvas) return;
   const ctx = canvas.getContext("2d");
 
-  if (typeof Chart === 'undefined') {
-    console.warn("Chart.js 尚未載入完成");
-    return;
-  }
+  if (typeof Chart === 'undefined') return;
 
   trendChart = new Chart(ctx, {
     type: "line",
