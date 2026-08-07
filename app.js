@@ -9,21 +9,28 @@ document.addEventListener("DOMContentLoaded", () => {
   initChart();
   renderAll();
   
-  // 網頁開起來時先更新一次
-  syncHoldingsAndRefresh();
+  // 網頁開啟時：抓即時報價 + 載入一次歷史走勢圖
+  fetchData();
+  fetchWeekHistory();
 
-  // 綁定「立即更新」按鈕點擊事件
+  // 1. 點擊「立即更新」：只更新目前顯示的股價與總資產（極速，不碰歷史走勢圖）
   const refreshBtn = document.getElementById("refreshBtn");
   if (refreshBtn) {
-    refreshBtn.addEventListener("click", () => {
-      syncHoldingsAndRefresh();
+    refreshBtn.addEventListener("click", async () => {
+      refreshBtn.disabled = true;
+      refreshBtn.textContent = "⏳ 更新中...";
+      
+      await fetchData(); // 只抓股價，不抓走勢
+
+      refreshBtn.disabled = false;
+      refreshBtn.textContent = "🔄 立即更新";
     });
   }
 
-  // 綁定表單新增股票事件
+  // 2. 表單新增股票：同步持股給 Worker，並刷報價
   const form = document.getElementById("addForm");
   if (form) {
-    form.addEventListener("submit", (e) => {
+    form.addEventListener("submit", async (e) => {
       e.preventDefault();
       let symbol = document.getElementById("symbol").value.trim().toUpperCase();
       const name = document.getElementById("name").value.trim();
@@ -41,58 +48,40 @@ document.addEventListener("DOMContentLoaded", () => {
         holdings.push({ symbol, name, market, cost, qty });
       }
 
-      saveAndRefresh();
+      saveAndSync();
       form.reset();
     });
   }
 });
 
-// 手動或自動同步持股到 Worker 並重新整理
-async function syncHoldingsAndRefresh() {
-  const refreshBtn = document.getElementById("refreshBtn");
-  if (refreshBtn) {
-    refreshBtn.disabled = true;
-    refreshBtn.textContent = "⏳ 更新中...";
-  }
-
+// 持股異動（新增/刪除）時同步備份給 Worker
+async function saveAndSync() {
   localStorage.setItem("myHoldings", JSON.stringify(holdings));
-  
+  renderAll();
+
   if (holdings.length > 0) {
     try {
-      // 1. 傳送持股給 Worker，並讓 Worker 立刻寫入一筆歷史走勢點
       await fetch(`${WORKER_URL}?action=sync_holdings`, {
         method: "POST",
         headers: { "Content-Type": "text/plain" },
         body: JSON.stringify(holdings)
       });
     } catch (e) {
-      console.error("同步失敗", e);
+      console.error("同步持股失敗", e);
     }
   }
-
-  // 2. 抓取最新股價
-  await fetchData();
   
-  // 3. 抓取並繪製歷史走勢圖
-  await fetchWeekHistory();
-
-  if (refreshBtn) {
-    refreshBtn.disabled = false;
-    refreshBtn.textContent = "🔄 立即更新";
-  }
-}
-
-function saveAndRefresh() {
-  syncHoldingsAndRefresh();
+  fetchData();
 }
 
 function deleteStock(symbol) {
   if (confirm(`確定刪除 ${symbol}？`)) {
     holdings = holdings.filter(h => h.symbol !== symbol);
-    saveAndRefresh();
+    saveAndSync();
   }
 }
 
+// 只負責抓取最新股價並更新畫面的卡片與數字
 async function fetchData() {
   updateTime();
   if (holdings.length === 0) {
@@ -120,12 +109,13 @@ async function fetchData() {
   renderAll();
 }
 
+// 讀取 Worker 每 5 分鐘自動記錄的走勢歷史
 async function fetchWeekHistory() {
   try {
     const res = await fetch(`${WORKER_URL}?action=history`);
     if (res.ok) {
       const history = await res.json();
-      if (history.length > 0) {
+      if (history && history.length > 0) {
         const labels = history.map(h => h.time);
         const values = history.map(h => h.val);
         updateChart(labels, values);
