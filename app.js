@@ -1,31 +1,16 @@
-// ⚠️ 請填入第一階段取得的 Cloudflare Worker 網址 (網址末尾不要加 / )
-const WORKER_URL = "https://stock-proxy.honggu0212.workers.dev"; 
+const WORKER_URL = "https://stock-proxy.honggu0212.workers.dev"; // ⚠️ 請確保這是你的 Worker 網址
 
 let holdings = JSON.parse(localStorage.getItem("myHoldings")) || [];
-let historyData = JSON.parse(localStorage.getItem("myAssetHistory")) || [];
-
 let usdTwdRate = 32.25; 
 let liveQuotes = {};
 let trendChart = null;
-let countdown = 60;
 
 document.addEventListener("DOMContentLoaded", () => {
   initChart();
   renderAll();
   fetchData();
+  fetchWeekHistory();
 
-  // 60秒倒數計時
-  setInterval(() => {
-    countdown--;
-    const el = document.getElementById("countdownText");
-    if (el) el.textContent = `${countdown} 秒後更新`;
-    if (countdown <= 0) {
-      countdown = 60;
-      fetchData();
-    }
-  }, 1000);
-
-  // 表單事件
   const form = document.getElementById("addForm");
   if (form) {
     form.addEventListener("submit", (e) => {
@@ -52,15 +37,14 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 });
 
-function manualRefresh() {
-  countdown = 60;
-  const el = document.getElementById("countdownText");
-  if (el) el.textContent = `60 秒後更新`;
-  fetchData();
-}
-
 function saveAndRefresh() {
   localStorage.setItem("myHoldings", JSON.stringify(holdings));
+  // 同步持股資料給 Cloudflare 機器人
+  fetch(`${WORKER_URL}?action=sync_holdings`, {
+    method: "POST",
+    body: JSON.stringify(holdings)
+  }).catch(e => console.error("同步失敗", e));
+
   fetchData();
 }
 
@@ -71,7 +55,6 @@ function deleteStock(symbol) {
   }
 }
 
-// 核心 fetch：向你的 Cloudflare Worker 請求即時股價與匯率
 async function fetchData() {
   updateTime();
   if (holdings.length === 0) {
@@ -82,30 +65,38 @@ async function fetchData() {
   const symbols = holdings.map(h => h.symbol);
   if (!symbols.includes("USDTWD=X")) symbols.push("USDTWD=X");
 
-  const query = symbols.join(",");
-  const apiEndpoint = `${WORKER_URL}?symbols=${encodeURIComponent(query)}`;
-
   try {
-    const res = await fetch(apiEndpoint);
+    const res = await fetch(`${WORKER_URL}?symbols=${encodeURIComponent(symbols.join(","))}`);
     if (res.ok) {
       const data = await res.json();
       const results = data.quoteResponse?.result || [];
-      
       results.forEach(q => {
-        if (q.symbol === "USDTWD=X") {
-          usdTwdRate = q.regularMarketPrice || usdTwdRate;
-        } else {
-          liveQuotes[q.symbol] = q.regularMarketPrice;
-        }
+        if (q.symbol === "USDTWD=X") usdTwdRate = q.regularMarketPrice || usdTwdRate;
+        else liveQuotes[q.symbol] = q.regularMarketPrice;
       });
-    } else {
-      console.warn("Worker 連線失敗，狀態碼：", res.status);
     }
   } catch (e) {
-    console.error("抓取失敗：", e);
+    console.error("抓取失敗", e);
   }
 
   renderAll();
+}
+
+// 取得 Cloudflare 背景自動紀錄的一週（2016筆）走勢
+async function fetchWeekHistory() {
+  try {
+    const res = await fetch(`${WORKER_URL}?action=history`);
+    if (res.ok) {
+      const history = await res.json();
+      if (history.length > 0) {
+        const labels = history.map(h => h.time);
+        const values = history.map(h => h.val);
+        updateChart(labels, values);
+      }
+    }
+  } catch (e) {
+    console.error("無法取得歷史紀錄", e);
+  }
 }
 
 function renderAll() {
@@ -120,15 +111,9 @@ function renderAll() {
   if (!grid) return;
   grid.innerHTML = "";
 
-  if (holdings.length === 0) {
-    grid.innerHTML = `<div style="color:var(--muted); grid-column: span 3;">目前沒有持股，請使用上方表單新增。</div>`;
-  }
-
   holdings.forEach(item => {
-    const hasLivePrice = liveQuotes[item.symbol] !== undefined;
-    const price = hasLivePrice ? liveQuotes[item.symbol] : item.cost;
-    const isUS = item.market === "US";
-    const rate = isUS ? usdTwdRate : 1;
+    const price = liveQuotes[item.symbol] !== undefined ? liveQuotes[item.symbol] : item.cost;
+    const rate = item.market === "US" ? usdTwdRate : 1;
 
     const valTwd = price * item.qty * rate;
     const costTwd = item.cost * item.qty * rate;
@@ -142,11 +127,6 @@ function renderAll() {
     const colorClass = isProfit ? "val-up" : "val-down";
     const sign = isProfit ? "+" : "";
 
-    let priceDisplay = `$${price.toFixed(2)}`;
-    if (!hasLivePrice) {
-      priceDisplay = `<span style="color:#f59e0b;" title="未抓到價錢，暫用成本">$${price.toFixed(2)}</span>`;
-    }
-
     const card = document.createElement("div");
     card.className = "stock-card";
     card.innerHTML = `
@@ -156,7 +136,7 @@ function renderAll() {
           <span class="badge">${item.market}</span>
         </div>
         <div class="stock-info">
-          <div>現價: ${priceDisplay}</div>
+          <div>現價: $${price.toFixed(2)}</div>
           <div>成本: $${item.cost.toFixed(2)}</div>
           <div>股數: ${item.qty}</div>
           <div>市值(NT): $${Math.round(valTwd).toLocaleString()}</div>
@@ -193,28 +173,6 @@ function renderAll() {
   }
 
   document.getElementById("tickerTrack").innerHTML = tickerHtml ? (tickerHtml + tickerHtml) : '<span class="ticker-item">尚無持股資料</span>';
-
-  if (totalValueTwd > 0) {
-    recordHistory(totalValueTwd);
-  } else {
-    updateChart([], []);
-  }
-}
-
-function recordHistory(value) {
-  const timeStr = new Date().toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' });
-  
-  if (historyData.length === 0 || historyData[historyData.length - 1].time !== timeStr) {
-    historyData.push({ time: timeStr, val: Math.round(value) });
-    if (historyData.length > 30) historyData.shift();
-    localStorage.setItem("myAssetHistory", JSON.stringify(historyData));
-  } else {
-    historyData[historyData.length - 1].val = Math.round(value);
-  }
-
-  const labels = historyData.map(d => d.time);
-  const values = historyData.map(d => d.val);
-  updateChart(labels, values);
 }
 
 function updateTime() {
@@ -227,21 +185,19 @@ function initChart() {
   if (!canvas) return;
   const ctx = canvas.getContext("2d");
 
-  if (typeof Chart === 'undefined') return;
-
   trendChart = new Chart(ctx, {
     type: "line",
     data: {
       labels: [],
       datasets: [{
-        label: "總市值 (TWD)",
+        label: "7天資產走勢 (5分鐘/筆)",
         data: [],
         borderColor: "#00e676",
         backgroundColor: "rgba(0, 230, 118, 0.1)",
-        borderWidth: 2,
+        borderWidth: 1.5,
         fill: true,
         tension: 0.2,
-        pointRadius: 3
+        pointRadius: 0 // 隱藏雜亂的點點，讓近千筆數據的曲線看起來極度流暢
       }]
     },
     options: {
@@ -249,7 +205,7 @@ function initChart() {
       maintainAspectRatio: false,
       plugins: { legend: { display: false } },
       scales: {
-        x: { grid: { color: "#1e293b" }, ticks: { color: "#64748b" } },
+        x: { grid: { color: "#1e293b" }, ticks: { color: "#64748b", maxTicksLimit: 12 } },
         y: { grid: { color: "#1e293b" }, ticks: { color: "#64748b" } }
       }
     }
@@ -260,13 +216,6 @@ function updateChart(labels, data) {
   if (trendChart) {
     trendChart.data.labels = labels;
     trendChart.data.datasets[0].data = data;
-
-    const pnlEl = document.getElementById("totalPnl");
-    const isProfit = pnlEl ? pnlEl.classList.contains("val-up") : true;
-    
-    trendChart.data.datasets[0].borderColor = isProfit ? "#00e676" : "#ff4d4d";
-    trendChart.data.datasets[0].backgroundColor = isProfit ? "rgba(0, 230, 118, 0.1)" : "rgba(255, 77, 77, 0.1)";
-
     trendChart.update();
   }
 }
