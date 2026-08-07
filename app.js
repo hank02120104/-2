@@ -13,27 +13,11 @@ document.addEventListener("DOMContentLoaded", () => {
   fetchData();
   fetchWeekHistory();
 
-  // 核心修復：啟動 1 分鐘 (60000ms) 自動更新機制
+  // 1 分鐘 (60000ms) 背景自動刷新即時報價
   setInterval(() => {
     console.log("[Auto Refresh] 自動刷新即時股價...");
     fetchData();
   }, 60000);
-
-  // 綁定「立即更新」按鈕
-  const refreshBtn = document.getElementById("refreshBtn");
-  if (refreshBtn) {
-    refreshBtn.addEventListener("click", async () => {
-      refreshBtn.disabled = true;
-      const originalText = refreshBtn.textContent;
-      refreshBtn.textContent = "⏳ 更新中...";
-      
-      await fetchData(); // 即時刷報價
-      await fetchWeekHistory(); // 同步刷最新歷史紀錄
-
-      refreshBtn.disabled = false;
-      refreshBtn.textContent = originalText;
-    });
-  }
 
   // 綁定表單新增/修改股票事件
   const form = document.getElementById("addForm");
@@ -66,6 +50,25 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 });
+
+// 關鍵修復：提供 HTML onclick="manualRefresh()" 呼叫的全域函數
+async function manualRefresh() {
+  const refreshBtn = document.getElementById("refreshBtn") || event?.currentTarget;
+  if (refreshBtn) {
+    refreshBtn.disabled = true;
+    refreshBtn.textContent = "⏳ 更新中...";
+  }
+
+  await fetchData();
+  await fetchWeekHistory();
+
+  if (refreshBtn) {
+    refreshBtn.disabled = false;
+    refreshBtn.textContent = "🔄 立即更新";
+  }
+}
+// 掛載至全域 window 物件
+window.manualRefresh = manualRefresh;
 
 // 儲存至本地並同步給 Cloudflare Worker
 async function saveAndSync() {
