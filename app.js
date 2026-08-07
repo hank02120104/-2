@@ -5,6 +5,10 @@ let usdTwdRate = 32.25;
 let liveQuotes = {};
 let trendChart = null;
 
+// 倒數計時器變數
+let countdownSeconds = 60;
+let timerInterval = null;
+
 document.addEventListener("DOMContentLoaded", () => {
   initChart();
   renderAll();
@@ -13,11 +17,8 @@ document.addEventListener("DOMContentLoaded", () => {
   fetchData();
   fetchWeekHistory();
 
-  // 1 分鐘 (60000ms) 背景自動刷新即時報價
-  setInterval(() => {
-    console.log("[Auto Refresh] 自動刷新即時股價...");
-    fetchData();
-  }, 60000);
+  // 啟動 60 秒動態倒數計時器
+  startCountdown();
 
   // 綁定表單新增/修改股票事件
   const form = document.getElementById("addForm");
@@ -51,13 +52,44 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 });
 
-// 關鍵修復：提供 HTML onclick="manualRefresh()" 呼叫的全域函數
+// 每秒動態執行的倒數計時
+function startCountdown() {
+  if (timerInterval) clearInterval(timerInterval);
+  countdownSeconds = 60;
+
+  timerInterval = setInterval(async () => {
+    countdownSeconds--;
+
+    // 試著對應頁面上可能存在的倒數元素 ID
+    const timerEl = document.getElementById("timerCount") || 
+                    document.getElementById("timer") || 
+                    document.getElementById("countdown");
+    if (timerEl) {
+      timerEl.textContent = countdownSeconds;
+    }
+
+    // 倒數到 0 秒：抓取新報價，並歸零重新計時
+    if (countdownSeconds <= 0) {
+      countdownSeconds = 60;
+      await fetchData();
+    }
+  }, 1000);
+}
+
+// 全域函數：手動點擊「立即更新」
 async function manualRefresh() {
-  const refreshBtn = document.getElementById("refreshBtn") || event?.currentTarget;
+  const refreshBtn = document.getElementById("refreshBtn") || (typeof event !== 'undefined' ? event?.currentTarget : null);
   if (refreshBtn) {
     refreshBtn.disabled = true;
     refreshBtn.textContent = "⏳ 更新中...";
   }
+
+  // 手動更新後重置倒數秒數
+  countdownSeconds = 60;
+  const timerEl = document.getElementById("timerCount") || 
+                  document.getElementById("timer") || 
+                  document.getElementById("countdown");
+  if (timerEl) timerEl.textContent = countdownSeconds;
 
   await fetchData();
   await fetchWeekHistory();
@@ -67,7 +99,6 @@ async function manualRefresh() {
     refreshBtn.textContent = "🔄 立即更新";
   }
 }
-// 掛載至全域 window 物件
 window.manualRefresh = manualRefresh;
 
 // 儲存至本地並同步給 Cloudflare Worker
@@ -117,8 +148,6 @@ async function fetchData() {
         if (q.symbol === "USDTWD=X") usdTwdRate = q.regularMarketPrice || usdTwdRate;
         else liveQuotes[q.symbol] = q.regularMarketPrice;
       });
-    } else {
-      console.error("API 回傳錯誤 HTTP Code:", res.status);
     }
   } catch (e) {
     console.error("抓取股價失敗:", e);
