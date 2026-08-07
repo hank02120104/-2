@@ -1,3 +1,6 @@
+// ⚠️ 請填入第一階段取得的 Cloudflare Worker 網址 (網址末尾不要加 / )
+const WORKER_URL = "https://stock-proxy.honggu0212.workers.dev"; 
+
 let holdings = JSON.parse(localStorage.getItem("myHoldings")) || [];
 let historyData = JSON.parse(localStorage.getItem("myAssetHistory")) || [];
 
@@ -11,7 +14,7 @@ document.addEventListener("DOMContentLoaded", () => {
   renderAll();
   fetchData();
 
-  // 倒數計時器
+  // 60秒倒數計時
   setInterval(() => {
     countdown--;
     const el = document.getElementById("countdownText");
@@ -22,7 +25,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }, 1000);
 
-  // 新增持股表單
+  // 表單事件
   const form = document.getElementById("addForm");
   if (form) {
     form.addEventListener("submit", (e) => {
@@ -33,9 +36,8 @@ document.addEventListener("DOMContentLoaded", () => {
       const cost = parseFloat(document.getElementById("cost").value);
       const qty = parseFloat(document.getElementById("qty").value);
 
-      if (market === "TW" && !symbol.includes(".")) {
-        symbol += ".TW";
-      }
+      if (market === "TW" && !symbol.includes(".")) symbol += ".TW";
+      if (market === "TWO" && !symbol.includes(".")) symbol += ".TWO";
 
       const idx = holdings.findIndex(h => h.symbol === symbol);
       if (idx >= 0) {
@@ -69,7 +71,7 @@ function deleteStock(symbol) {
   }
 }
 
-// 採用穩定的抓取機制 (透過公共 API 轉接)
+// 核心 fetch：向你的 Cloudflare Worker 請求即時股價與匯率
 async function fetchData() {
   updateTime();
   if (holdings.length === 0) {
@@ -80,11 +82,11 @@ async function fetchData() {
   const symbols = holdings.map(h => h.symbol);
   if (!symbols.includes("USDTWD=X")) symbols.push("USDTWD=X");
 
-  const query = encodeURIComponent(symbols.join(","));
-  const primaryApi = `https://api.allorigins.win/raw?url=${encodeURIComponent('https://query1.finance.yahoo.com/v7/finance/quote?symbols=' + query)}`;
+  const query = symbols.join(",");
+  const apiEndpoint = `${WORKER_URL}?symbols=${encodeURIComponent(query)}`;
 
   try {
-    const res = await fetch(primaryApi);
+    const res = await fetch(apiEndpoint);
     if (res.ok) {
       const data = await res.json();
       const results = data.quoteResponse?.result || [];
@@ -96,9 +98,11 @@ async function fetchData() {
           liveQuotes[q.symbol] = q.regularMarketPrice;
         }
       });
+    } else {
+      console.warn("Worker 連線失敗，狀態碼：", res.status);
     }
   } catch (e) {
-    console.warn("無法取得即時資料，將維持上一次成功連線的價格或成本價");
+    console.error("抓取失敗：", e);
   }
 
   renderAll();
@@ -140,7 +144,7 @@ function renderAll() {
 
     let priceDisplay = `$${price.toFixed(2)}`;
     if (!hasLivePrice) {
-      priceDisplay = `<span style="color:#f59e0b;" title="使用成本估算">$${price.toFixed(2)}</span>`;
+      priceDisplay = `<span style="color:#f59e0b;" title="未抓到價錢，暫用成本">$${price.toFixed(2)}</span>`;
     }
 
     const card = document.createElement("div");
