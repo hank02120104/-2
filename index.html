@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>個人資產投資組合</title>
+  <!-- 更換更穩定的 Chart.js CDN -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+  <style>
+    :root {
+      --bg: #0b0f19;
+      --card-bg: #151c2c;
+      --border: #232d42;
+      --text: #f1f5f9;
+      --muted: #64748b;
+      --red: #ff4d4d;
+      --green: #00e676;
+      --accent: #00d2ff;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background-color: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      padding: 24px;
+      padding-bottom: 60px;
+      max-width: 1280px;
+      margin: 0 auto;
+    }
+
+    .top-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+
+    .stat-card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+
+    .stat-title {
+      font-size: 13px;
+      color: var(--muted);
+      margin-bottom: 8px;
+    }
+
+    .stat-value {
+      font-size: 28px;
+      font-weight: 800;
+      letter-spacing: -0.5px;
+    }
+
+    .stat-sub {
+      font-size: 12px;
+      color: var(--muted);
+      margin-top: 6px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .val-down { color: var(--red); }
+    .val-up { color: var(--green); }
+
+    .btn-refresh {
+      background: #3b82f6;
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      padding: 4px 10px;
+      font-size: 12px;
+      font-weight: bold;
+      cursor: pointer;
+    }
+    .btn-refresh:hover { background: #2563eb; }
+
+    .chart-card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 24px;
+      margin-bottom: 24px;
+    }
+
+    .chart-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      margin-bottom: 16px;
+    }
+
+    .chart-tag {
+      font-size: 11px;
+      letter-spacing: 1.5px;
+      color: var(--accent);
+      font-weight: bold;
+      text-transform: uppercase;
+      margin-bottom: 4px;
+    }
+
+    .chart-title {
+      font-size: 22px;
+      font-weight: bold;
+    }
+
+    .chart-total {
+      font-size: 32px;
+      font-weight: 800;
+      text-align: right;
+    }
+
+    .chart-wrapper {
+      position: relative;
+      height: 320px;
+      width: 100%;
+    }
+
+    .form-card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 24px;
+    }
+
+    .form-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 12px;
+      margin-top: 12px;
+    }
+
+    input, select, button {
+      padding: 10px 14px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: var(--bg);
+      color: var(--text);
+      font-size: 14px;
+      outline: none;
+    }
+
+    button.btn-add {
+      background: #2563eb;
+      color: #fff;
+      font-weight: bold;
+      cursor: pointer;
+      border: none;
+    }
+    button.btn-add:hover { background: #1d4ed8; }
+
+    .section-title {
+      font-size: 20px;
+      margin-bottom: 16px;
+    }
+
+    .holdings-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 16px;
+    }
+
+    .stock-card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 18px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+
+    .stock-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+
+    .stock-symbol {
+      font-size: 18px;
+      font-weight: bold;
+    }
+
+    .badge {
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 4px;
+      background: #232d42;
+    }
+
+    .stock-info {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      font-size: 13px;
+      margin-bottom: 12px;
+    }
+
+    .pnl-box {
+      grid-column: span 2;
+      border-top: 1px dashed var(--border);
+      padding-top: 8px;
+      display: flex;
+      justify-content: space-between;
+      font-weight: bold;
+    }
+
+    .btn-del {
+      background: #ef4444;
+      padding: 6px;
+      font-size: 12px;
+      cursor: pointer;
+      border: none;
+      color: #fff;
+      border-radius: 6px;
+    }
+
+    .ticker-bar {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      width: 100%;
+      height: 40px;
+      background: #060911;
+      border-top: 1px solid var(--border);
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      z-index: 100;
+    }
+
+    .ticker-track {
+      display: flex;
+      white-space: nowrap;
+      animation: marquee 25s linear infinite;
+    }
+
+    .ticker-item {
+      margin-right: 32px;
+      font-size: 13px;
+      font-family: monospace;
+    }
+
+    @keyframes marquee {
+      0% { transform: translateX(0); }
+      100% { transform: translateX(-50%); }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="top-grid">
+    <div class="stat-card">
+      <div class="stat-title">目前總損益</div>
+      <div class="stat-value" id="totalPnl">$0</div>
+      <div class="stat-sub" id="totalPnlRate">0.00%</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-title">總投入成本</div>
+      <div class="stat-value" id="totalCost">$0</div>
+      <div class="stat-sub">台幣估算</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-title">最新美元匯率</div>
+      <div class="stat-value" id="usdTwdRate">--</div>
+      <div class="stat-sub">即時匯率</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-title">更新時間</div>
+      <div class="stat-value" style="font-size:20px;" id="currentTime">--/--/--</div>
+      <div class="stat-sub">
+        <span id="countdownText">60 秒後更新</span>
+        <button class="btn-refresh" onclick="manualRefresh()">立即更新</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="chart-card">
+    <div class="chart-header">
+      <div>
+        <div class="chart-tag">Total Asset Trend</div>
+        <div class="chart-title">全資產總市值走勢</div>
+      </div>
+      <div>
+        <div class="stat-title" style="text-align:right;">目前總市值</div>
+        <div class="chart-total" id="totalMarketValue">$0</div>
+      </div>
+    </div>
+    <div class="chart-wrapper">
+      <canvas id="trendChart"></canvas>
+    </div>
+  </div>
+
+  <div class="form-card">
+    <h3 style="font-size: 16px;">新增 / 編輯持股</h3>
+    <form id="addForm">
+      <div class="form-grid">
+        <input type="text" id="symbol" placeholder="代號 (如: 1815.TW, NVDA)" required>
+        <input type="text" id="name" placeholder="名稱 (如: 富喬, 輝達)" required>
+        <select id="market">
+          <option value="TW">台股 (TWD)</option>
+          <option value="US">美股 (USD)</option>
+        </select>
+        <input type="number" id="cost" step="0.01" placeholder="成本價" required>
+        <input type="number" id="qty" step="1" placeholder="持有股數" required>
+        <button type="submit" class="btn-add">加入投資組合</button>
+      </div>
+    </form>
+  </div>
+
+  <h2 class="section-title">持股明細</h2>
+  <div class="holdings-grid" id="holdingsGrid"></div>
+
+  <div class="ticker-bar">
+    <div class="ticker-track" id="tickerTrack"></div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
