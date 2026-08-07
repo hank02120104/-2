@@ -3,24 +3,16 @@ const WORKER_URL = "https://stock-proxy.honggu0212.workers.dev";
 let holdings = JSON.parse(localStorage.getItem("myHoldings")) || [];
 let usdTwdRate = 32.25; 
 let liveQuotes = {};
-let trendChart = null;
+let sparklineCharts = {};
 
-// 倒數計時器變數
 let countdownSeconds = 60;
 let timerInterval = null;
 
 document.addEventListener("DOMContentLoaded", () => {
-  initChart();
   renderAll();
-  
-  // 網頁初始化：載入即時股價與歷史走勢圖
   fetchData();
-  fetchWeekHistory();
-
-  // 啟動 60 秒動態倒數計時器
   startCountdown();
 
-  // 綁定表單新增/修改股票事件
   const form = document.getElementById("addForm");
   if (form) {
     form.addEventListener("submit", async (e) => {
@@ -32,7 +24,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const qty = parseFloat(document.getElementById("qty").value);
 
       if (!symbol || isNaN(cost) || isNaN(qty)) {
-        alert("請填寫正確的股票代號、成本與股數");
+        alert("請填寫正確資料");
         return;
       }
 
@@ -52,21 +44,15 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 });
 
-// 每秒動態執行的倒數計時器 (完美相容 id="countdownText")
 function startCountdown() {
   if (timerInterval) clearInterval(timerInterval);
   countdownSeconds = 60;
 
   timerInterval = setInterval(async () => {
     countdownSeconds--;
-
-    // 精準對應你的 HTML ID: countdownText
     const countdownEl = document.getElementById("countdownText");
-    if (countdownEl) {
-      countdownEl.textContent = `${countdownSeconds} 秒後更新`;
-    }
+    if (countdownEl) countdownEl.textContent = `${countdownSeconds} 秒後更新`;
 
-    // 倒數到 0 秒：抓取新報價，並歸零重新計時
     if (countdownSeconds <= 0) {
       countdownSeconds = 60;
       await fetchData();
@@ -74,23 +60,18 @@ function startCountdown() {
   }, 1000);
 }
 
-// 提供 HTML onclick="manualRefresh()" 呼叫的全域函數
 async function manualRefresh() {
-  const refreshBtn = document.querySelector(".btn-refresh") || (typeof event !== 'undefined' ? event?.currentTarget : null);
+  const refreshBtn = document.querySelector(".btn-refresh");
   if (refreshBtn) {
     refreshBtn.disabled = true;
     refreshBtn.textContent = "⏳ 更新中...";
   }
 
-  // 手動更新後重置倒數秒數
   countdownSeconds = 60;
   const countdownEl = document.getElementById("countdownText");
-  if (countdownEl) {
-    countdownEl.textContent = "60 秒後更新";
-  }
+  if (countdownEl) countdownEl.textContent = "60 秒後更新";
 
   await fetchData();
-  await fetchWeekHistory();
 
   if (refreshBtn) {
     refreshBtn.disabled = false;
@@ -99,7 +80,6 @@ async function manualRefresh() {
 }
 window.manualRefresh = manualRefresh;
 
-// 儲存至本地並同步給 Cloudflare Worker
 async function saveAndSync() {
   localStorage.setItem("myHoldings", JSON.stringify(holdings));
   renderAll();
@@ -126,7 +106,6 @@ function deleteStock(symbol) {
   }
 }
 
-// 抓取即時報價並繪製畫面
 async function fetchData() {
   updateTime();
   if (holdings.length === 0) {
@@ -152,23 +131,7 @@ async function fetchData() {
   }
 
   renderAll();
-}
-
-// 取得 7 天資產走勢紀錄
-async function fetchWeekHistory() {
-  try {
-    const res = await fetch(`${WORKER_URL}?action=history`);
-    if (res.ok) {
-      const history = await res.json();
-      if (Array.isArray(history) && history.length > 0) {
-        const labels = history.map(h => h.time);
-        const values = history.map(h => h.val);
-        updateChart(labels, values);
-      }
-    }
-  } catch (e) {
-    console.error("無法取得歷史紀錄:", e);
-  }
+  loadAllSparklines();
 }
 
 function renderAll() {
@@ -186,11 +149,13 @@ function renderAll() {
     holdings.forEach(item => {
       const price = liveQuotes[item.symbol] !== undefined ? liveQuotes[item.symbol] : item.cost;
       const rate = item.market === "US" ? usdTwdRate : 1;
+      const currencyPrefix = item.market === "US" ? "US$" : "NT$";
 
       const valTwd = price * item.qty * rate;
       const costTwd = item.cost * item.qty * rate;
       const pnlTwd = valTwd - costTwd;
-      const pnlRate = item.cost > 0 ? ((price - item.cost) / item.cost) * 100 : 0;
+      const diffPerShare = price - item.cost;
+      const pnlOriginal = diffPerShare * item.qty;
 
       totalValueTwd += valTwd;
       totalCostTwd += costTwd;
@@ -198,27 +163,51 @@ function renderAll() {
       const isProfit = pnlTwd >= 0;
       const colorClass = isProfit ? "val-up" : "val-down";
       const sign = isProfit ? "+" : "";
+      const profitText = isProfit ? "賺" : "賠";
+
+      const canvasId = `spark_${item.symbol.replace(/[^a-zA-Z0-9]/g, '_')}`;
 
       const card = document.createElement("div");
       card.className = "stock-card";
       card.innerHTML = `
-        <div>
-          <div class="stock-header">
-            <span class="stock-symbol">${item.name || item.symbol} (${item.symbol})</span>
-            <span class="badge">${item.market}</span>
+        <div class="card-top">
+          <div>
+            <div class="card-symbol">${item.symbol}</div>
+            <div class="card-name">${item.name || item.symbol}</div>
           </div>
-          <div class="stock-info">
-            <div>現價: $${price.toFixed(2)}</div>
-            <div>成本: $${item.cost.toFixed(2)}</div>
-            <div>股數: ${item.qty}</div>
-            <div>市值(NT): $${Math.round(valTwd).toLocaleString()}</div>
-            <div class="pnl-box ${colorClass}">
-              <span>損益:</span>
-              <span>${sign}$${Math.round(pnlTwd).toLocaleString()} (${sign}${pnlRate.toFixed(2)}%)</span>
-            </div>
-          </div>
+          <span class="card-badge">${item.market === 'US' ? '美股' : '台股'}</span>
         </div>
-        <button class="btn-del" onclick="deleteStock('${item.symbol}')">刪除持股</button>
+
+        <div class="card-big-price">${currencyPrefix}${price.toFixed(2)}</div>
+        <div class="card-price-sub">最新現價 • ${item.market === 'US' ? 'USD' : 'TWD'}</div>
+
+        <div class="detail-row">
+          <span>入場成本</span>
+          <span class="detail-value">${currencyPrefix}${item.cost.toFixed(2)}</span>
+        </div>
+        <div class="detail-row">
+          <span>持有數量</span>
+          <span class="detail-value">${item.qty} 股</span>
+        </div>
+        <div class="detail-row">
+          <span>每股價差</span>
+          <span class="detail-value ${colorClass}">${sign}${diffPerShare.toFixed(2)}</span>
+        </div>
+
+        <div class="divider"></div>
+
+        <div class="profit-section">
+          <div class="profit-main ${colorClass}">${profitText} ${currencyPrefix}${Math.abs(pnlOriginal).toLocaleString(undefined, {minimumFractionDigits: 2})}</div>
+          ${item.market === 'US' ? `<div class="profit-sub ${colorClass}">約 ${sign}$${Math.round(pnlTwd).toLocaleString()} NT</div>` : ''}
+        </div>
+
+        <div class="sparkline-wrapper">
+          <canvas id="${canvasId}"></canvas>
+        </div>
+
+        <div class="card-footer-action">
+          <button class="btn-del" onclick="deleteStock('${item.symbol}')">刪除持股</button>
+        </div>
       `;
       grid.appendChild(card);
 
@@ -230,9 +219,6 @@ function renderAll() {
   const totalPnlRate = totalCostTwd > 0 ? (totalPnl / totalCostTwd) * 100 : 0;
   const pnlSign = totalPnl >= 0 ? "+" : "";
 
-  const totalMarketValEl = document.getElementById("totalMarketValue");
-  if (totalMarketValEl) totalMarketValEl.textContent = `$${Math.round(totalValueTwd).toLocaleString()}`;
-  
   const totalCostEl = document.getElementById("totalCost");
   if (totalCostEl) totalCostEl.textContent = `$${Math.round(totalCostTwd).toLocaleString()}`;
   
@@ -254,52 +240,68 @@ function renderAll() {
   }
 }
 
-function updateTime() {
-  const el = document.getElementById("currentTime");
-  if (el) el.textContent = new Date().toLocaleTimeString('zh-TW');
+// 載入所有持股的 2 天 5分鐘迷你走勢圖
+async function loadAllSparklines() {
+  for (const item of holdings) {
+    try {
+      const res = await fetch(`${WORKER_URL}?action=stock_history&symbol=${encodeURIComponent(item.symbol)}`);
+      if (res.ok) {
+        const history = await res.json();
+        if (Array.isArray(history) && history.length > 0) {
+          const labels = history.map(h => h.time);
+          const prices = history.map(h => h.price);
+          
+          const isUp = prices[prices.length - 1] >= prices[0];
+          renderSparkline(item.symbol, labels, prices, isUp);
+        }
+      }
+    } catch (e) {
+      console.error(`無法載入 ${item.symbol} 走勢:`, e);
+    }
+  }
 }
 
-function initChart() {
-  const canvas = document.getElementById("trendChart");
+// 繪製個股迷你 Sparkline 圖表
+function renderSparkline(symbol, labels, data, isUp) {
+  const canvasId = `spark_${symbol.replace(/[^a-zA-Z0-9]/g, '_')}`;
+  const canvas = document.getElementById(canvasId);
   if (!canvas) return;
-  const ctx = canvas.getContext("2d");
 
-  if (typeof Chart === "undefined") {
-    console.error("Chart.js 未載入！");
-    return;
+  const ctx = canvas.getContext("2d");
+  const strokeColor = isUp ? "#00e676" : "#ff4d4d";
+  const fillColor = isUp ? "rgba(0, 230, 118, 0.15)" : "rgba(255, 77, 77, 0.15)";
+
+  if (sparklineCharts[symbol]) {
+    sparklineCharts[symbol].destroy();
   }
 
-  trendChart = new Chart(ctx, {
+  sparklineCharts[symbol] = new Chart(ctx, {
     type: "line",
     data: {
-      labels: [],
+      labels: labels,
       datasets: [{
-        label: "7天資產走勢 (5分鐘/筆)",
-        data: [],
-        borderColor: "#00e676",
-        backgroundColor: "rgba(0, 230, 118, 0.1)",
+        data: data,
+        borderColor: strokeColor,
         borderWidth: 2,
+        backgroundColor: fillColor,
         fill: true,
-        tension: 0.2,
-        pointRadius: 3
+        tension: 0.3,
+        pointRadius: 0
       }]
     },
     options: {
       responsive: true,
       maintainAspectRatio: false,
-      plugins: { legend: { display: false } },
+      plugins: { legend: { display: false }, tooltip: { enabled: true } },
       scales: {
-        x: { grid: { color: "#1e293b" }, ticks: { color: "#64748b", maxTicksLimit: 12 } },
-        y: { grid: { color: "#1e293b" }, ticks: { color: "#64748b" } }
+        x: { display: false },
+        y: { display: false }
       }
     }
   });
 }
 
-function updateChart(labels, data) {
-  if (trendChart) {
-    trendChart.data.labels = labels;
-    trendChart.data.datasets[0].data = data;
-    trendChart.update();
-  }
+function updateTime() {
+  const el = document.getElementById("currentTime");
+  if (el) el.textContent = new Date().toLocaleTimeString('zh-TW');
 }
