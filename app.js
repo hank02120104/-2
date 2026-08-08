@@ -11,19 +11,18 @@ let timerInterval = null;
 
 document.addEventListener("DOMContentLoaded", async () => {
   initChart();
-  renderAll();
   
-  // 跨裝置同步：初始化時先嘗試從 Cloudflare Worker 讀取最新的持股清單
+  // 1. 跨裝置同步優先：優先從 Cloudflare Worker (KV) 讀取最新持股
   await loadHoldingsFromRemote();
 
-  // 網頁初始化：載入即時股價與歷史走勢圖
-  fetchData();
-  fetchWeekHistory();
+  // 2. 載入即時股價與歷史走勢圖
+  await fetchData();
+  await fetchWeekHistory();
 
-  // 啟動 60 秒動態倒數計時器
+  // 3. 啟動 60 秒動態倒數計時器
   startCountdown();
 
-  // 綁定表單新增/修改股票事件
+  // 4. 綁定表單新增/修改股票事件
   const form = document.getElementById("addForm");
   if (form) {
     form.addEventListener("submit", async (e) => {
@@ -61,7 +60,7 @@ async function loadHoldingsFromRemote() {
     const res = await fetch(`${WORKER_URL}?action=get_holdings`);
     if (res.ok) {
       const remoteHoldings = await res.json();
-      if (Array.isArray(remoteHoldings) && remoteHoldings.length > 0) {
+      if (Array.isArray(remoteHoldings)) {
         holdings = remoteHoldings;
         localStorage.setItem("myHoldings", JSON.stringify(holdings));
         renderAll();
@@ -69,10 +68,11 @@ async function loadHoldingsFromRemote() {
     }
   } catch (e) {
     console.error("無法讀取雲端持股，將使用本地快取:", e);
+    renderAll();
   }
 }
 
-// 每秒動態執行的倒數計時器 (完美相容 id="countdownText")
+// 每秒動態執行的倒數計時器
 function startCountdown() {
   if (timerInterval) clearInterval(timerInterval);
   countdownSeconds = 60;
@@ -80,21 +80,21 @@ function startCountdown() {
   timerInterval = setInterval(async () => {
     countdownSeconds--;
 
-    // 精準對應你的 HTML ID: countdownText
     const countdownEl = document.getElementById("countdownText");
     if (countdownEl) {
       countdownEl.textContent = `${countdownSeconds} 秒後更新`;
     }
 
-    // 倒數到 0 秒：抓取新報價，並歸零重新計時
+    // 倒數到 0 秒：同時同步「最新持股」與「最新股價」
     if (countdownSeconds <= 0) {
       countdownSeconds = 60;
+      await loadHoldingsFromRemote();
       await fetchData();
     }
   }, 1000);
 }
 
-// 提供 HTML onclick="manualRefresh()" 呼叫的全域函數
+// 手動更新按鈕
 async function manualRefresh() {
   const refreshBtn = document.querySelector(".btn-refresh") || (typeof event !== 'undefined' ? event?.currentTarget : null);
   if (refreshBtn) {
@@ -102,7 +102,6 @@ async function manualRefresh() {
     refreshBtn.textContent = "⏳ 更新中...";
   }
 
-  // 手動更新後重置倒數秒數
   countdownSeconds = 60;
   const countdownEl = document.getElementById("countdownText");
   if (countdownEl) {
@@ -126,9 +125,10 @@ async function saveAndSync() {
   renderAll();
 
   try {
+    // 傳送 JSON 格式給 Cloudflare Worker 同步
     await fetch(`${WORKER_URL}?action=sync_holdings`, {
       method: "POST",
-      headers: { "Content-Type": "text/plain" },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(holdings)
     });
   } catch (e) {
@@ -300,8 +300,8 @@ function initChart() {
         borderWidth: 2,
         fill: true,
         tension: 0.2,
-        pointRadius: 0,         // 平時隱藏圓點
-        pointHoverRadius: 6    // 懸停時顯現圓點
+        pointRadius: 0,
+        pointHoverRadius: 6
       }]
     },
     options: {
@@ -319,9 +319,9 @@ function initChart() {
           grid: { color: "#1e293b" },
           ticks: {
             color: "#64748b",
-            maxTicksLimit: 14,    // 最多只均勻顯示 14 個時間標籤
-            maxRotation: 0,       // 不傾斜文字
-            autoSkip: true        // 自動過濾過密時間
+            maxTicksLimit: 14,
+            maxRotation: 0,
+            autoSkip: true
           }
         },
         y: {
