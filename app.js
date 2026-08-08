@@ -9,10 +9,13 @@ let trendChart = null;
 let countdownSeconds = 60;
 let timerInterval = null;
 
-document.addEventListener("DOMContentLoaded", () => {
+document.addEventListener("DOMContentLoaded", async () => {
   initChart();
   renderAll();
   
+  // 跨裝置同步：初始化時先嘗試從 Cloudflare Worker 讀取最新的持股清單
+  await loadHoldingsFromRemote();
+
   // 網頁初始化：載入即時股價與歷史走勢圖
   fetchData();
   fetchWeekHistory();
@@ -52,6 +55,23 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 });
 
+// 從 Cloudflare Worker (KV) 載入持股紀錄
+async function loadHoldingsFromRemote() {
+  try {
+    const res = await fetch(`${WORKER_URL}?action=get_holdings`);
+    if (res.ok) {
+      const remoteHoldings = await res.json();
+      if (Array.isArray(remoteHoldings) && remoteHoldings.length > 0) {
+        holdings = remoteHoldings;
+        localStorage.setItem("myHoldings", JSON.stringify(holdings));
+        renderAll();
+      }
+    }
+  } catch (e) {
+    console.error("無法讀取雲端持股，將使用本地快取:", e);
+  }
+}
+
 // 每秒動態執行的倒數計時器 (完美相容 id="countdownText")
 function startCountdown() {
   if (timerInterval) clearInterval(timerInterval);
@@ -89,6 +109,7 @@ async function manualRefresh() {
     countdownEl.textContent = "60 秒後更新";
   }
 
+  await loadHoldingsFromRemote();
   await fetchData();
   await fetchWeekHistory();
 
@@ -104,16 +125,14 @@ async function saveAndSync() {
   localStorage.setItem("myHoldings", JSON.stringify(holdings));
   renderAll();
 
-  if (holdings.length > 0) {
-    try {
-      await fetch(`${WORKER_URL}?action=sync_holdings`, {
-        method: "POST",
-        headers: { "Content-Type": "text/plain" },
-        body: JSON.stringify(holdings)
-      });
-    } catch (e) {
-      console.error("同步持股失敗:", e);
-    }
+  try {
+    await fetch(`${WORKER_URL}?action=sync_holdings`, {
+      method: "POST",
+      headers: { "Content-Type": "text/plain" },
+      body: JSON.stringify(holdings)
+    });
+  } catch (e) {
+    console.error("同步持股失敗:", e);
   }
   
   await fetchData();
