@@ -1,464 +1,540 @@
+```html
 <!DOCTYPE html>
 <html lang="zh-TW">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>我的投資組合</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>我的投資組合</title>
 
-  <style>
-    * {
-      box-sizing: border-box;
-    }
+<style>
+* {
+  box-sizing: border-box;
+}
 
-    body {
-      margin: 0;
-      padding: 20px;
-      background: #f5f3ef;
-      color: #333;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft JhengHei", sans-serif;
-    }
+body {
+  margin: 0;
+  font-family:
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    "Microsoft JhengHei",
+    sans-serif;
+  background: #f5f1eb;
+  color: #3f342b;
+}
 
-    .container {
-      max-width: 1200px;
-      margin: auto;
-    }
+.container {
+  width: min(1100px, 94%);
+  margin: 30px auto;
+}
 
-    h1 {
-      color: #5b4636;
-      margin-bottom: 20px;
-    }
+h1 {
+  text-align: center;
+  margin-bottom: 25px;
+  color: #5a4636;
+}
 
-    h2 {
-      color: #5b4636;
-      margin-top: 0;
-    }
+h2 {
+  color: #5a4636;
+  margin-top: 0;
+}
 
-    .top-bar {
-      display: flex;
-      gap: 10px;
-      flex-wrap: wrap;
-      margin-bottom: 20px;
-    }
+.card {
+  background: #fff;
+  border-radius: 18px;
+  padding: 22px;
+  margin-bottom: 22px;
+  box-shadow: 0 4px 18px rgba(70, 50, 30, 0.08);
+}
 
-    .account-box {
-      background: white;
-      padding: 15px;
-      border-radius: 12px;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
-      display: flex;
-      gap: 10px;
-      align-items: center;
-      flex-wrap: wrap;
-    }
+.account-box {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
 
-    input,
-    select,
-    button {
-      font-family: inherit;
-      font-size: 15px;
-    }
+.account-box label {
+  font-weight: bold;
+}
 
-    input,
-    select {
-      padding: 9px 11px;
-      border: 1px solid #d8d0c7;
-      border-radius: 8px;
-      background: white;
-      outline: none;
-    }
+input,
+select {
+  border: 1px solid #d8cec3;
+  border-radius: 9px;
+  padding: 10px 12px;
+  font-size: 15px;
+  background: #fff;
+  color: #3f342b;
+}
 
-    button {
-      padding: 9px 15px;
-      border: none;
-      border-radius: 8px;
-      cursor: pointer;
-      background: #80664f;
-      color: white;
-      font-weight: bold;
-    }
+button {
+  border: 0;
+  border-radius: 9px;
+  padding: 10px 15px;
+  font-size: 14px;
+  font-weight: bold;
+  cursor: pointer;
+  background: #80664f;
+  color: #fff;
+}
 
-    button:hover {
-      opacity: 0.9;
-    }
+button:hover {
+  opacity: 0.85;
+}
 
-    .secondary {
-      background: #8c8c8c;
-    }
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 12px;
+}
 
-    .danger {
-      background: #a85d52;
-    }
+.form-item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
 
-    .card {
-      background: white;
-      border-radius: 14px;
-      padding: 20px;
-      margin-bottom: 20px;
-      box-shadow: 0 2px 10px rgba(0,0,0,0.08);
-    }
+.form-item label {
+  font-size: 13px;
+  font-weight: bold;
+  color: #76675a;
+}
 
-    .form-grid {
-      display: grid;
-      grid-template-columns: repeat(6, 1fr);
-      gap: 12px;
-      align-items: end;
-    }
+.form-actions {
+  display: flex;
+  align-items: end;
+  gap: 8px;
+}
 
-    .form-item {
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-    }
+.secondary {
+  background: #999;
+}
 
-    .form-item label {
-      font-size: 14px;
-      color: #6b5b4d;
-      font-weight: bold;
-    }
+.danger {
+  background: #a85b50;
+}
 
-    .form-actions {
-      display: flex;
-      gap: 8px;
-    }
+.status {
+  margin-top: 14px;
+  font-size: 14px;
+  color: #777;
+}
 
-    .table-wrapper {
-      overflow-x: auto;
-    }
+.stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 15px;
+  margin-bottom: 22px;
+}
 
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      min-width: 900px;
-    }
+.stat-card {
+  background: #fff;
+  border-radius: 15px;
+  padding: 18px;
+  box-shadow: 0 4px 18px rgba(70, 50, 30, 0.08);
+}
 
-    th,
-    td {
-      padding: 10px;
-      border-bottom: 1px solid #eee;
-      text-align: center;
-      white-space: nowrap;
-    }
+.stat-title {
+  color: #8a7b6e;
+  font-size: 13px;
+  margin-bottom: 8px;
+}
 
-    th {
-      background: #eee7df;
-      color: #5b4636;
-    }
+.stat-value {
+  font-size: 23px;
+  font-weight: bold;
+  color: #5a4636;
+}
 
-    tr:hover td {
-      background: #faf8f5;
-    }
+.stat-sub {
+  margin-top: 4px;
+  font-size: 13px;
+}
 
-    .positive {
-      color: #b3483d;
-      font-weight: bold;
-    }
+.val-up {
+  color: #b34e43 !important;
+}
 
-    .negative {
-      color: #39805b;
-      font-weight: bold;
-    }
+.val-down {
+  color: #39805b !important;
+}
 
-    .neutral {
-      color: #666;
-    }
+.holdings-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+}
 
-    .summary {
-      display: grid;
-      grid-template-columns: repeat(4, 1fr);
-      gap: 12px;
-      margin-bottom: 20px;
-    }
+.stock-card {
+  border: 1px solid #e5ddd4;
+  border-radius: 15px;
+  padding: 18px;
+  background: #fffdfb;
+}
 
-    .summary-box {
-      background: white;
-      border-radius: 12px;
-      padding: 15px;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.07);
-    }
+.stock-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 15px;
+}
 
-    .summary-title {
-      color: #777;
-      font-size: 14px;
-      margin-bottom: 6px;
-    }
+.stock-symbol {
+  font-size: 18px;
+  font-weight: bold;
+  color: #5a4636;
+}
 
-    .summary-value {
-      color: #5b4636;
-      font-size: 22px;
-      font-weight: bold;
-    }
+.badge {
+  display: inline-block;
+  background: #eee5dc;
+  color: #6d5948;
+  padding: 4px 8px;
+  border-radius: 7px;
+  font-size: 12px;
+}
 
-    .status {
-      margin-top: 10px;
-      color: #777;
-      font-size: 14px;
-    }
+.stock-info {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 9px;
+  font-size: 14px;
+}
 
-    .empty {
-      text-align: center;
-      color: #999;
-      padding: 25px;
-    }
+.pnl-box {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: space-between;
+  padding: 12px;
+  margin-top: 5px;
+  border-radius: 9px;
+  background: #f5f0eb;
+  font-weight: bold;
+}
 
-    .action-buttons {
-      display: flex;
-      justify-content: center;
-      gap: 6px;
-    }
+.card-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 15px;
+}
 
-    .action-buttons button {
-      padding: 6px 10px;
-      font-size: 13px;
-    }
+.btn-sell {
+  flex: 1;
+}
 
-    @media (max-width: 900px) {
-      .form-grid {
-        grid-template-columns: repeat(2, 1fr);
-      }
+.btn-del {
+  background: #a85b50;
+}
 
-      .summary {
-        grid-template-columns: repeat(2, 1fr);
-      }
-    }
+.ticker {
+  overflow: hidden;
+  white-space: nowrap;
+  margin-bottom: 20px;
+  background: #fff;
+  border-radius: 12px;
+  padding: 10px;
+}
 
-    @media (max-width: 600px) {
-      body {
-        padding: 10px;
-      }
+.ticker-track {
+  display: inline-flex;
+  gap: 30px;
+}
 
-      .form-grid {
-        grid-template-columns: 1fr;
-      }
+.ticker-item {
+  font-size: 13px;
+}
 
-      .summary {
-        grid-template-columns: 1fr;
-      }
+.realized-wrapper {
+  overflow-x: auto;
+}
 
-      .card {
-        padding: 15px;
-      }
-    }
-  </style>
+table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 750px;
+}
+
+th,
+td {
+  padding: 11px 9px;
+  border-bottom: 1px solid #eee5dd;
+  text-align: center;
+  font-size: 13px;
+}
+
+th {
+  background: #eee5dc;
+  color: #5a4636;
+}
+
+.delete-realized {
+  background: #a85b50;
+  padding: 6px 10px;
+  font-size: 12px;
+}
+
+.empty-message,
+.empty-table {
+  color: #999;
+  text-align: center;
+  padding: 25px;
+}
+
+@media (max-width: 900px) {
+  .form-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .stats {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .holdings-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 600px) {
+  .container {
+    width: 94%;
+    margin: 15px auto;
+  }
+
+  .card {
+    padding: 16px;
+  }
+
+  .form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .stats {
+    grid-template-columns: 1fr;
+  }
+
+  .account-box {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .account-box input,
+  .account-box select,
+  .account-box button {
+    width: 100%;
+  }
+}
+</style>
 </head>
 
 <body>
 
 <div class="container">
 
-  <h1>我的投資組合</h1>
+<h1>我的投資組合</h1>
 
-  <div class="top-bar">
-    <div class="account-box">
+<div class="card">
+  <div class="account-box">
+    <label for="accountInput">帳號</label>
 
-      <label for="accountInput">帳號</label>
+    <input
+      id="accountInput"
+      type="text"
+      value="user1"
+      placeholder="輸入帳號"
+    >
 
-      <input
-        type="text"
-        id="accountInput"
-        value="user1"
-        placeholder="輸入帳號"
-      >
+    <button
+      id="switchAccountBtn"
+      type="button"
+    >
+      切換帳號
+    </button>
 
-      <button id="switchAccountBtn" type="button">
-        切換帳號
-      </button>
+    <button
+      id="refreshBtn"
+      type="button"
+      class="secondary"
+    >
+      重新整理
+    </button>
+  </div>
+</div>
 
-      <button id="refreshBtn" type="button" class="secondary">
-        重新整理
-      </button>
+<div class="stats">
 
-    </div>
+  <div class="stat-card">
+    <div class="stat-title">目前持股市值</div>
+    <div id="totalMarketValue" class="stat-value">$0</div>
   </div>
 
-  <div class="summary">
-
-    <div class="summary-box">
-      <div class="summary-title">持股市值</div>
-      <div class="summary-value" id="totalMarketValue">0</div>
-    </div>
-
-    <div class="summary-box">
-      <div class="summary-title">投入成本</div>
-      <div class="summary-value" id="totalCost">0</div>
-    </div>
-
-    <div class="summary-box">
-      <div class="summary-title">未實現損益</div>
-      <div class="summary-value" id="totalUnrealized">0</div>
-    </div>
-
-    <div class="summary-box">
-      <div class="summary-title">已實現損益</div>
-      <div class="summary-value" id="totalRealized">0</div>
-    </div>
-
+  <div class="stat-card">
+    <div class="stat-title">未實現損益</div>
+    <div id="totalPnl" class="stat-value">$0</div>
+    <div id="totalPnlRate" class="stat-sub">0.00%</div>
   </div>
 
-  <div class="card">
-
-    <h2>新增 / 編輯持股</h2>
-
-    <form id="addForm">
-
-      <div class="form-grid">
-
-        <div class="form-item">
-          <label for="symbol">股票代號</label>
-          <input
-            type="text"
-            id="symbol"
-            placeholder="例如 2330"
-            required
-          >
-        </div>
-
-        <div class="form-item">
-          <label for="name">股票名稱</label>
-          <input
-            type="text"
-            id="name"
-            placeholder="例如 台積電"
-          >
-        </div>
-
-        <div class="form-item">
-          <label for="market">市場</label>
-          <select id="market">
-            <option value="TW">上市 TW</option>
-            <option value="TWO">上櫃 TWO</option>
-            <option value="US">美股 US</option>
-          </select>
-        </div>
-
-        <div class="form-item">
-          <label for="cost">平均成本</label>
-          <input
-            type="number"
-            id="cost"
-            min="0"
-            step="0.01"
-            placeholder="1000"
-            required
-          >
-        </div>
-
-        <div class="form-item">
-          <label for="qty">股數</label>
-          <input
-            type="number"
-            id="qty"
-            min="0"
-            step="1"
-            placeholder="1000"
-            required
-          >
-        </div>
-
-        <div class="form-actions">
-
-          <button type="submit">
-            儲存
-          </button>
-
-          <button
-            type="button"
-            id="cancelEditBtn"
-            class="secondary"
-            style="display:none;"
-          >
-            取消
-          </button>
-
-        </div>
-
-      </div>
-
-    </form>
-
-    <div class="status" id="syncStatus">
-      準備完成
-    </div>
-
+  <div class="stat-card">
+    <div class="stat-title">已實現損益</div>
+    <div id="totalRealizedPnl" class="stat-value">$0</div>
   </div>
 
-  <div class="card">
-
-    <h2>目前持股</h2>
-
-    <div class="table-wrapper">
-
-      <table>
-
-        <thead>
-          <tr>
-            <th>股票代號</th>
-            <th>名稱</th>
-            <th>市場</th>
-            <th>股數</th>
-            <th>平均成本</th>
-            <th>目前價格</th>
-            <th>投入成本</th>
-            <th>目前市值</th>
-            <th>未實現損益</th>
-            <th>報酬率</th>
-            <th>操作</th>
-          </tr>
-        </thead>
-
-        <tbody id="holdingsBody">
-
-          <tr>
-            <td colspan="11" class="empty">
-              尚無持股資料
-            </td>
-          </tr>
-
-        </tbody>
-
-      </table>
-
-    </div>
-
+  <div class="stat-card">
+    <div class="stat-title">USD / TWD</div>
+    <div id="usdTwdRate" class="stat-value">32.250</div>
   </div>
 
-  <div class="card">
+</div>
 
-    <h2>已實現損益</h2>
-
-    <div class="table-wrapper">
-
-      <table>
-
-        <thead>
-          <tr>
-            <th>股票代號</th>
-            <th>名稱</th>
-            <th>賣出股數</th>
-            <th>買入成本</th>
-            <th>賣出價格</th>
-            <th>賣出金額</th>
-            <th>已實現損益</th>
-            <th>報酬率</th>
-            <th>日期</th>
-            <th>操作</th>
-          </tr>
-        </thead>
-
-        <tbody id="realizedBody">
-
-          <tr>
-            <td colspan="10" class="empty">
-              尚無已實現損益
-            </td>
-          </tr>
-
-        </tbody>
-
-      </table>
-
-    </div>
-
+<div class="ticker">
+  <div id="tickerTrack" class="ticker-track">
+    <span class="ticker-item">
+      尚無持股資料
+    </span>
   </div>
+</div>
+
+<div class="card">
+
+<h2>新增 / 編輯持股</h2>
+
+<form id="addForm">
+
+<div class="form-grid">
+
+  <div class="form-item">
+    <label for="symbol">股票代號</label>
+    <input
+      id="symbol"
+      type="text"
+      placeholder="2330"
+      required
+    >
+  </div>
+
+  <div class="form-item">
+    <label for="name">股票名稱</label>
+    <input
+      id="name"
+      type="text"
+      placeholder="台積電"
+    >
+  </div>
+
+  <div class="form-item">
+    <label for="market">市場</label>
+
+    <select id="market">
+      <option value="TW">台股上市</option>
+      <option value="TWO">台股上櫃</option>
+      <option value="US">美股</option>
+    </select>
+  </div>
+
+  <div class="form-item">
+    <label for="cost">平均成本</label>
+    <input
+      id="cost"
+      type="number"
+      min="0"
+      step="0.01"
+      placeholder="1000"
+      required
+    >
+  </div>
+
+  <div class="form-item">
+    <label for="qty">股數</label>
+    <input
+      id="qty"
+      type="number"
+      min="0"
+      step="1"
+      placeholder="1000"
+      required
+    >
+  </div>
+
+</div>
+
+<div class="form-actions" style="margin-top:15px;">
+
+  <button type="submit">
+    儲存持股
+  </button>
+
+  <button
+    type="button"
+    id="cancelEditBtn"
+    class="secondary"
+    style="display:none;"
+  >
+    取消編輯
+  </button>
+
+</div>
+
+</form>
+
+<div id="syncStatus" class="status">
+  雲端同步準備完成
+</div>
+
+</div>
+
+<div class="card">
+
+<h2>目前持股</h2>
+
+<div
+  id="holdingsGrid"
+  class="holdings-grid"
+>
+  <div class="empty-message">
+    尚無未實現持股。
+  </div>
+</div>
+
+</div>
+
+<div class="card">
+
+<h2>已實現損益</h2>
+
+<div class="realized-wrapper">
+
+<table>
+
+<thead>
+<tr>
+  <th>日期</th>
+  <th>股票</th>
+  <th>市場</th>
+  <th>買入成本</th>
+  <th>賣出價格</th>
+  <th>股數</th>
+  <th>原幣損益</th>
+  <th>台幣損益</th>
+  <th>操作</th>
+</tr>
+</thead>
+
+<tbody id="realizedTableBody">
+
+<tr>
+  <td colspan="9" class="empty-table">
+    尚無已實現賣出紀錄
+  </td>
+</tr>
+
+</tbody>
+
+</table>
+
+</div>
+
+</div>
 
 </div>
 
@@ -466,3 +542,4 @@
 
 </body>
 </html>
+```
