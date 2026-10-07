@@ -4,8 +4,6 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>個人全資產投資組合 Dashboard</title>
-  <!-- Chart.js 官方穩定 CDN -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
   <style>
     :root {
       --bg: #0b0f19;
@@ -16,6 +14,7 @@
       --red: #ff4d4d;
       --green: #00e676;
       --accent: #00d2ff;
+      --orange: #f59e0b;
     }
 
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -30,9 +29,28 @@
       margin: 0 auto;
     }
 
+    .account-bar {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px 20px;
+      margin-bottom: 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+
+    .account-selector {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
     .top-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
       gap: 16px;
       margin-bottom: 24px;
     }
@@ -48,11 +66,23 @@
     }
 
     .stat-title { font-size: 13px; color: var(--muted); margin-bottom: 8px; }
-    .stat-value { font-size: 28px; font-weight: 800; letter-spacing: -0.5px; }
+    .stat-value { font-size: 26px; font-weight: 800; letter-spacing: -0.5px; }
     .stat-sub { font-size: 12px; color: var(--muted); margin-top: 6px; display: flex; justify-content: space-between; align-items: center; }
 
     .val-down { color: var(--red); }
     .val-up { color: var(--green); }
+
+    .btn-primary {
+      background: #3b82f6;
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      padding: 6px 14px;
+      font-size: 13px;
+      font-weight: bold;
+      cursor: pointer;
+    }
+    .btn-primary:hover { background: #2563eb; }
 
     .btn-refresh {
       background: #3b82f6;
@@ -64,21 +94,6 @@
       font-weight: bold;
       cursor: pointer;
     }
-    .btn-refresh:hover { background: #2563eb; }
-
-    .chart-card {
-      background: var(--card-bg);
-      border: 1px solid var(--border);
-      border-radius: 16px;
-      padding: 24px;
-      margin-bottom: 24px;
-    }
-
-    .chart-header { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 16px; }
-    .chart-tag { font-size: 11px; letter-spacing: 1.5px; color: var(--accent); font-weight: bold; text-transform: uppercase; margin-bottom: 4px; }
-    .chart-title { font-size: 22px; font-weight: bold; }
-    .chart-total { font-size: 32px; font-weight: 800; text-align: right; }
-    .chart-wrapper { position: relative; height: 320px; width: 100%; }
 
     .form-card {
       background: var(--card-bg);
@@ -112,9 +127,8 @@
       cursor: pointer;
       border: none;
     }
-    button.btn-add:hover { background: #1d4ed8; }
 
-    .section-title { font-size: 20px; margin-bottom: 16px; }
+    .section-title { font-size: 20px; margin: 24px 0 16px 0; }
 
     .holdings-grid {
       display: grid;
@@ -153,14 +167,58 @@
       font-weight: bold;
     }
 
+    .card-actions {
+      display: flex;
+      gap: 8px;
+      margin-top: 8px;
+    }
+
+    .btn-sell {
+      flex: 1;
+      background: var(--orange);
+      color: #000;
+      font-weight: bold;
+      padding: 6px;
+      font-size: 12px;
+      cursor: pointer;
+      border: none;
+      border-radius: 6px;
+    }
+
     .btn-del {
       background: #ef4444;
-      padding: 6px;
+      padding: 6px 12px;
       font-size: 12px;
       cursor: pointer;
       border: none;
       color: #fff;
       border-radius: 6px;
+    }
+
+    /* 已實現明細表格 */
+    .realized-table-container {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow-x: auto;
+    }
+
+    table.realized-table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+      font-size: 14px;
+    }
+
+    table.realized-table th, table.realized-table td {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    table.realized-table th {
+      background: #1e293b;
+      color: var(--muted);
+      font-size: 12px;
     }
 
     .ticker-bar {
@@ -188,45 +246,41 @@
 </head>
 <body>
 
+  <!-- 多帳號切換列 -->
+  <div class="account-bar">
+    <div class="account-selector">
+      <span style="font-weight: bold; color: var(--accent);">👤 當前帳號：</span>
+      <input type="text" id="accountInput" placeholder="輸入帳號名稱" style="width: 160px;" value="user1">
+      <button class="btn-primary" onclick="switchAccount()">切換／載入</button>
+    </div>
+    <div style="font-size: 13px; color: var(--muted);">
+      💡 可以在不同裝置切換相同帳號同步持股與賣出紀錄。
+    </div>
+  </div>
+
   <div class="top-grid">
     <div class="stat-card">
-      <div class="stat-title">目前總損益</div>
+      <div class="stat-title">總市值估算 (NT)</div>
+      <div class="stat-value" id="totalMarketValue">$0</div>
+      <div class="stat-sub">未實現現值</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-title">未實現總損益</div>
       <div class="stat-value" id="totalPnl">$0</div>
       <div class="stat-sub" id="totalPnlRate">0.00%</div>
     </div>
     <div class="stat-card">
-      <div class="stat-title">總投入成本</div>
-      <div class="stat-value" id="totalCost">$0</div>
-      <div class="stat-sub">台幣估算</div>
+      <div class="stat-title">累計已實現損益 (NT)</div>
+      <div class="stat-value" id="totalRealizedPnl">$0</div>
+      <div class="stat-sub">已結算獲利/虧損</div>
     </div>
     <div class="stat-card">
-      <div class="stat-title">最新美金匯率 (USD/TWD)</div>
+      <div class="stat-title">美金匯率 (USD/TWD)</div>
       <div class="stat-value" id="usdTwdRate">--</div>
-      <div class="stat-sub">即時匯率</div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-title">最後更新時間</div>
-      <div class="stat-value" style="font-size:20px;" id="currentTime">--:--:--</div>
       <div class="stat-sub">
         <span id="countdownText">60 秒後更新</span>
         <button class="btn-refresh" onclick="manualRefresh()">立即更新</button>
       </div>
-    </div>
-  </div>
-
-  <div class="chart-card">
-    <div class="chart-header">
-      <div>
-        <div class="chart-tag">Asset Portfolio Trend</div>
-        <div class="chart-title">全資產總市值走勢</div>
-      </div>
-      <div>
-        <div class="stat-title" style="text-align:right;">目前總市值 (NT)</div>
-        <div class="chart-total" id="totalMarketValue">$0</div>
-      </div>
-    </div>
-    <div class="chart-wrapper">
-      <canvas id="trendChart"></canvas>
     </div>
   </div>
 
@@ -248,8 +302,28 @@
     </form>
   </div>
 
-  <h2 class="section-title">持股明細</h2>
+  <h2 class="section-title">未實現持股 (<span class="accountTitle">user1</span>)</h2>
   <div class="holdings-grid" id="holdingsGrid"></div>
+
+  <h2 class="section-title">已實現獲利交易紀錄 (<span class="accountTitle">user1</span>)</h2>
+  <div class="realized-table-container">
+    <table class="realized-table">
+      <thead>
+        <tr>
+          <th>時間</th>
+          <th>標的</th>
+          <th>市場</th>
+          <th>買入成本</th>
+          <th>賣出價格</th>
+          <th>股數</th>
+          <th>已實現損益 (原幣)</th>
+          <th>已實現損益 (NT)</th>
+          <th>操作</th>
+        </tr>
+      </thead>
+      <tbody id="realizedTableBody"></tbody>
+    </table>
+  </div>
 
   <div class="ticker-bar">
     <div class="ticker-track" id="tickerTrack"></div>
