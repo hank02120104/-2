@@ -1,28 +1,30 @@
 const WORKER_URL = "https://stock-proxy.honggu0212.workers.dev";
 
-let holdings = JSON.parse(localStorage.getItem("myHoldings")) || [];
+let currentAccount = localStorage.getItem("currentAccount") || "user1";
+let holdings = [];
+let realizedList = [];
 let usdTwdRate = 32.25; 
 let liveQuotes = {};
-let trendChart = null;
 
-// 倒數計時器變數
 let countdownSeconds = 60;
 let timerInterval = null;
 
 document.addEventListener("DOMContentLoaded", async () => {
-  initChart();
+  const accountInput = document.getElementById("accountInput");
+  if (accountInput) accountInput.value = currentAccount;
   
-  // 1. 跨裝置同步優先：優先從 Cloudflare Worker (KV) 讀取最新持股
-  await loadHoldingsFromRemote();
+  updateAccountTitle();
 
-  // 2. 載入即時股價與歷史走勢圖
+  // 1. 從 Worker 載入完整資料 (未實現持股 + 已實現紀錄)
+  await loadDataFromRemote();
+
+  // 2. 載入即時報價
   await fetchData();
-  await fetchWeekHistory();
 
-  // 3. 啟動 60 秒動態倒數計時器
+  // 3. 啟動計時器
   startCountdown();
 
-  // 4. 綁定表單新增/修改股票事件
+  // 4. 綁定表單提交
   const form = document.getElementById("addForm");
   if (form) {
     form.addEventListener("submit", async (e) => {
@@ -54,47 +56,126 @@ document.addEventListener("DOMContentLoaded", async () => {
   }
 });
 
-// 從 Cloudflare Worker (KV) 載入持股紀錄
-async function loadHoldingsFromRemote() {
+// 切換帳號
+async function switchAccount() {
+  const accountInput = document.getElementById("accountInput");
+  const newAccount = accountInput.value.trim().toLowerCase();
+
+  if (!newAccount) {
+    alert("請輸入有效的帳號名稱");
+    return;
+  }
+
+  currentAccount = newAccount;
+  localStorage.setItem("currentAccount", currentAccount);
+  updateAccountTitle();
+
+  await loadDataFromRemote();
+  await fetchData();
+}
+window.switchAccount = switchAccount;
+
+function updateAccountTitle() {
+  document.querySelectorAll(".accountTitle").forEach(el => el.textContent = currentAccount);
+}
+
+// 賣出股票邏輯
+function sellStock(symbol) {
+  const item = holdings.find(h => h.symbol === symbol);
+  if (!item) return;
+
+  const currentPrice = liveQuotes[symbol] || item.cost;
+  const sellQtyStr = prompt(`【賣出 ${item.name || item.symbol}】\n目前持有股數：${item.qty}\n請輸入賣出股數：`, item.qty);
+  if (sellQtyStr === null) return;
+
+  const sellQty = parseFloat(sellQtyStr);
+  if (isNaN(sellQty) || sellQty <= 0 || sellQty > item.qty) {
+    alert("請輸入有效的賣出股數！");
+    return;
+  }
+
+  const sellPriceStr = prompt(`請輸入賣出單價 (原幣)：`, currentPrice);
+  if (sellPriceStr === null) return;
+
+  const sellPrice = parseFloat(sellPriceStr);
+  if (isNaN(sellPrice) || sellPrice <= 0) {
+    alert("請輸入有效的賣出單價！");
+    return;
+  }
+
+  const rate = item.market === "US" ? usdTwdRate : 1;
+  const pnlOrig = (sellPrice - item.cost) * sellQty;
+  const pnlTwd = pnlOrig * rate;
+
+  // 1. 新增到已實現紀錄
+  realizedList.unshift({
+    id: Date.now(),
+    date: new Date().toLocaleDateString('zh-TW'),
+    symbol: item.symbol,
+    name: item.name,
+    market: item.market,
+    cost: item.cost,
+    sellPrice: sellPrice,
+    qty: sellQty,
+    pnlOrig: pnlOrig,
+    pnlTwd: pnlTwd
+  });
+
+  // 2. 扣減或刪除未實現持股
+  if (sellQty === item.qty) {
+    holdings = holdings.filter(h => h.symbol !== symbol);
+  } else {
+    item.qty -= sellQty;
+  }
+
+  saveAndSync();
+}
+window.sellStock = sellStock;
+
+// 刪除已實現紀錄
+function deleteRealized(id) {
+  if (confirm("確定刪除這筆賣出紀錄？")) {
+    realizedList = realizedList.filter(r => r.id !== id);
+    saveAndSync();
+  }
+}
+window.deleteRealized = deleteRealized;
+
+// 從 Worker 載入資料
+async function loadDataFromRemote() {
   try {
-    const res = await fetch(`${WORKER_URL}?action=get_holdings`);
+    const res = await fetch(`${WORKER_URL}?action=get_holdings&account=${encodeURIComponent(currentAccount)}`);
     if (res.ok) {
-      const remoteHoldings = await res.json();
-      if (Array.isArray(remoteHoldings)) {
-        holdings = remoteHoldings;
-        localStorage.setItem("myHoldings", JSON.stringify(holdings));
-        renderAll();
-      }
+      const data = await res.json();
+      holdings = data.holdings || [];
+      realizedList = data.realized || [];
+      renderAll();
     }
   } catch (e) {
-    console.error("無法讀取雲端持股，將使用本地快取:", e);
+    console.error("讀取雲端失敗:", e);
     renderAll();
   }
 }
 
-// 每秒動態執行的倒數計時器
+// 動態計時器
 function startCountdown() {
   if (timerInterval) clearInterval(timerInterval);
   countdownSeconds = 60;
 
   timerInterval = setInterval(async () => {
     countdownSeconds--;
-
     const countdownEl = document.getElementById("countdownText");
-    if (countdownEl) {
-      countdownEl.textContent = `${countdownSeconds} 秒後更新`;
-    }
+    if (countdownEl) countdownEl.textContent = `${countdownSeconds} 秒後更新`;
 
-    // 倒數到 0 秒：同時同步「最新持股」與「最新股價」
     if (countdownSeconds <= 0) {
       countdownSeconds = 60;
-      await loadHoldingsFromRemote();
+      await loadDataFromRemote();
       await fetchData();
     }
   }, 1000);
 }
 
-// 手動更新按鈕
+// 手動刷新
 async function manualRefresh() {
   const refreshBtn = document.querySelector(".btn-refresh") || (typeof event !== 'undefined' ? event?.currentTarget : null);
   if (refreshBtn) {
@@ -103,14 +184,8 @@ async function manualRefresh() {
   }
 
   countdownSeconds = 60;
-  const countdownEl = document.getElementById("countdownText");
-  if (countdownEl) {
-    countdownEl.textContent = "60 秒後更新";
-  }
-
-  await loadHoldingsFromRemote();
+  await loadDataFromRemote();
   await fetchData();
-  await fetchWeekHistory();
 
   if (refreshBtn) {
     refreshBtn.disabled = false;
@@ -119,35 +194,38 @@ async function manualRefresh() {
 }
 window.manualRefresh = manualRefresh;
 
-// 儲存至本地並同步給 Cloudflare Worker
+// 同步資料至 Cloudflare Worker
 async function saveAndSync() {
-  localStorage.setItem("myHoldings", JSON.stringify(holdings));
   renderAll();
 
+  const payload = {
+    holdings: holdings,
+    realized: realizedList
+  };
+
   try {
-    // 傳送 JSON 格式給 Cloudflare Worker 同步
-    await fetch(`${WORKER_URL}?action=sync_holdings`, {
+    await fetch(`${WORKER_URL}?action=sync_holdings&account=${encodeURIComponent(currentAccount)}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(holdings)
+      body: JSON.stringify(payload)
     });
   } catch (e) {
-    console.error("同步持股失敗:", e);
+    console.error("同步失敗:", e);
   }
   
   await fetchData();
 }
 
 function deleteStock(symbol) {
-  if (confirm(`確定刪除 ${symbol}？`)) {
+  if (confirm(`確定刪除未實現持股 ${symbol}？`)) {
     holdings = holdings.filter(h => h.symbol !== symbol);
     saveAndSync();
   }
 }
+window.deleteStock = deleteStock;
 
-// 抓取即時報價並繪製畫面
+// 抓取即時價格
 async function fetchData() {
-  updateTime();
   if (holdings.length === 0) {
     renderAll();
     return;
@@ -173,23 +251,7 @@ async function fetchData() {
   renderAll();
 }
 
-// 取得 7 天資產走勢紀錄
-async function fetchWeekHistory() {
-  try {
-    const res = await fetch(`${WORKER_URL}?action=history`);
-    if (res.ok) {
-      const history = await res.json();
-      if (Array.isArray(history) && history.length > 0) {
-        const labels = history.map(h => h.time);
-        const values = history.map(h => h.val);
-        updateChart(labels, values);
-      }
-    }
-  } catch (e) {
-    console.error("無法取得歷史紀錄:", e);
-  }
-}
-
+// 畫面渲染邏輯
 function renderAll() {
   const rateEl = document.getElementById("usdTwdRate");
   if (rateEl) rateEl.textContent = usdTwdRate.toFixed(3);
@@ -198,9 +260,14 @@ function renderAll() {
   let totalCostTwd = 0;
   let tickerHtml = "";
 
+  // 1. 渲染未實現持股卡片
   const grid = document.getElementById("holdingsGrid");
   if (grid) {
     grid.innerHTML = "";
+
+    if (holdings.length === 0) {
+      grid.innerHTML = '<div style="color: var(--muted); grid-column: span 3;">尚無未實現持股。</div>';
+    }
 
     holdings.forEach(item => {
       const price = liveQuotes[item.symbol] !== undefined ? liveQuotes[item.symbol] : item.cost;
@@ -232,12 +299,15 @@ function renderAll() {
             <div>股數: ${item.qty}</div>
             <div>市值(NT): $${Math.round(valTwd).toLocaleString()}</div>
             <div class="pnl-box ${colorClass}">
-              <span>損益:</span>
+              <span>未實現損益:</span>
               <span>${sign}$${Math.round(pnlTwd).toLocaleString()} (${sign}${pnlRate.toFixed(2)}%)</span>
             </div>
           </div>
         </div>
-        <button class="btn-del" onclick="deleteStock('${item.symbol}')">刪除持股</button>
+        <div class="card-actions">
+          <button class="btn-sell" onclick="sellStock('${item.symbol}')">💰 賣出</button>
+          <button class="btn-del" onclick="deleteStock('${item.symbol}')">刪除</button>
+        </div>
       `;
       grid.appendChild(card);
 
@@ -245,15 +315,12 @@ function renderAll() {
     });
   }
 
+  // 2. 計算未實現總損益
   const totalPnl = totalValueTwd - totalCostTwd;
   const totalPnlRate = totalCostTwd > 0 ? (totalPnl / totalCostTwd) * 100 : 0;
   const pnlSign = totalPnl >= 0 ? "+" : "";
 
-  const totalMarketValEl = document.getElementById("totalMarketValue");
-  if (totalMarketValEl) totalMarketValEl.textContent = `$${Math.round(totalValueTwd).toLocaleString()}`;
-  
-  const totalCostEl = document.getElementById("totalCost");
-  if (totalCostEl) totalCostEl.textContent = `$${Math.round(totalCostTwd).toLocaleString()}`;
+  document.getElementById("totalMarketValue").textContent = `$${Math.round(totalValueTwd).toLocaleString()}`;
   
   const pnlEl = document.getElementById("totalPnl");
   if (pnlEl) {
@@ -267,76 +334,48 @@ function renderAll() {
     pnlRateEl.className = `stat-sub ${totalPnl >= 0 ? 'val-up' : 'val-down'}`;
   }
 
+  // 3. 計算與渲染已實現紀錄
+  let sumRealizedTwd = 0;
+  const realizedTbody = document.getElementById("realizedTableBody");
+  if (realizedTbody) {
+    realizedTbody.innerHTML = "";
+
+    if (realizedList.length === 0) {
+      realizedTbody.innerHTML = '<tr><td colspan="9" style="text-align: center; color: var(--muted); padding: 20px;">尚無已實現賣出紀錄</td></tr>';
+    } else {
+      realizedList.forEach(r => {
+        sumRealizedTwd += r.pnlTwd;
+        const isProfit = r.pnlTwd >= 0;
+        const colorClass = isProfit ? "val-up" : "val-down";
+        const sign = isProfit ? "+" : "";
+
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${r.date}</td>
+          <td><strong>${r.name || r.symbol}</strong> (${r.symbol})</td>
+          <td><span class="badge">${r.market}</span></td>
+          <td>$${r.cost.toFixed(2)}</td>
+          <td>$${r.sellPrice.toFixed(2)}</td>
+          <td>${r.qty}</td>
+          <td class="${colorClass}">${sign}$${r.pnlOrig.toFixed(2)}</td>
+          <td class="${colorClass}"><strong>${sign}$${Math.round(r.pnlTwd).toLocaleString()}</strong></td>
+          <td><button style="background:none; border:none; color:var(--red); cursor:pointer; font-size:12px;" onclick="deleteRealized(${r.id})">刪除</button></td>
+        `;
+        realizedTbody.appendChild(tr);
+      });
+    }
+  }
+
+  const realizedPnlEl = document.getElementById("totalRealizedPnl");
+  if (realizedPnlEl) {
+    const realSign = sumRealizedTwd >= 0 ? "+" : "";
+    realizedPnlEl.textContent = `${realSign}$${Math.round(sumRealizedTwd).toLocaleString()}`;
+    realizedPnlEl.className = `stat-value ${sumRealizedTwd >= 0 ? 'val-up' : 'val-down'}`;
+  }
+
+  // 跑馬燈
   const tickerTrackEl = document.getElementById("tickerTrack");
   if (tickerTrackEl) {
     tickerTrackEl.innerHTML = tickerHtml ? (tickerHtml + tickerHtml) : '<span class="ticker-item">尚無持股資料</span>';
-  }
-}
-
-function updateTime() {
-  const el = document.getElementById("currentTime");
-  if (el) el.textContent = new Date().toLocaleTimeString('zh-TW');
-}
-
-function initChart() {
-  const canvas = document.getElementById("trendChart");
-  if (!canvas) return;
-  const ctx = canvas.getContext("2d");
-
-  if (typeof Chart === "undefined") {
-    console.error("Chart.js 未載入！");
-    return;
-  }
-
-  trendChart = new Chart(ctx, {
-    type: "line",
-    data: {
-      labels: [],
-      datasets: [{
-        label: "7天資產走勢",
-        data: [],
-        borderColor: "#00e676",
-        backgroundColor: "rgba(0, 230, 118, 0.1)",
-        borderWidth: 2,
-        fill: true,
-        tension: 0.2,
-        pointRadius: 0,
-        pointHoverRadius: 6
-      }]
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: {
-        legend: { display: false },
-        tooltip: {
-          mode: 'index',
-          intersect: false,
-        }
-      },
-      scales: {
-        x: {
-          grid: { color: "#1e293b" },
-          ticks: {
-            color: "#64748b",
-            maxTicksLimit: 14,
-            maxRotation: 0,
-            autoSkip: true
-          }
-        },
-        y: {
-          grid: { color: "#1e293b" },
-          ticks: { color: "#64748b" }
-        }
-      }
-    }
-  });
-}
-
-function updateChart(labels, data) {
-  if (trendChart) {
-    trendChart.data.labels = labels;
-    trendChart.data.datasets[0].data = data;
-    trendChart.update();
   }
 }
