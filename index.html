@@ -15,35 +15,27 @@
       padding: 20px;
       background: #f5f3ef;
       color: #333;
-      font-family:
-        -apple-system,
-        BlinkMacSystemFont,
-        "Segoe UI",
-        "Microsoft JhengHei",
-        sans-serif;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft JhengHei", sans-serif;
     }
 
     .container {
       max-width: 1200px;
-      margin: 0 auto;
+      margin: auto;
     }
 
     h1 {
-      margin: 0 0 20px;
       color: #5b4636;
-      font-size: 30px;
+      margin-bottom: 20px;
     }
 
     h2 {
-      margin: 0 0 15px;
       color: #5b4636;
-      font-size: 22px;
+      margin-top: 0;
     }
 
     .top-bar {
       display: flex;
-      gap: 12px;
-      align-items: center;
+      gap: 10px;
       flex-wrap: wrap;
       margin-bottom: 20px;
     }
@@ -54,14 +46,9 @@
       border-radius: 12px;
       box-shadow: 0 2px 8px rgba(0,0,0,0.08);
       display: flex;
-      align-items: center;
       gap: 10px;
+      align-items: center;
       flex-wrap: wrap;
-    }
-
-    .account-box label {
-      font-weight: bold;
-      color: #5b4636;
     }
 
     input,
@@ -80,11 +67,6 @@
       outline: none;
     }
 
-    input:focus,
-    select:focus {
-      border-color: #9b8066;
-    }
-
     button {
       padding: 9px 15px;
       border: none;
@@ -99,12 +81,12 @@
       opacity: 0.9;
     }
 
-    .danger {
-      background: #a85d52;
-    }
-
     .secondary {
       background: #8c8c8c;
+    }
+
+    .danger {
+      background: #a85d52;
     }
 
     .card {
@@ -117,7 +99,7 @@
 
     .form-grid {
       display: grid;
-      grid-template-columns: repeat(5, 1fr);
+      grid-template-columns: repeat(6, 1fr);
       gap: 12px;
       align-items: end;
     }
@@ -146,12 +128,12 @@
     table {
       width: 100%;
       border-collapse: collapse;
-      min-width: 850px;
+      min-width: 900px;
     }
 
     th,
     td {
-      padding: 11px 9px;
+      padding: 10px;
       border-bottom: 1px solid #eee;
       text-align: center;
       white-space: nowrap;
@@ -160,7 +142,6 @@
     th {
       background: #eee7df;
       color: #5b4636;
-      font-weight: bold;
     }
 
     tr:hover td {
@@ -245,10 +226,6 @@
         padding: 10px;
       }
 
-      h1 {
-        font-size: 24px;
-      }
-
       .form-grid {
         grid-template-columns: 1fr;
       }
@@ -260,238 +237,232 @@
       .card {
         padding: 15px;
       }
-
-      .account-box {
-        width: 100%;
-      }
-
-      .account-box input,
-      .account-box select {
-        flex: 1;
-        min-width: 0;
-      }
     }
   </style>
 </head>
 
 <body>
 
-  <div class="container">
+<div class="container">
 
-    <h1>我的投資組合</h1>
+  <h1>我的投資組合</h1>
 
-    <div class="top-bar">
-      <div class="account-box">
-        <label for="accountInput">帳號</label>
+  <div class="top-bar">
+    <div class="account-box">
 
-        <input
-          type="text"
-          id="accountInput"
-          value="user1"
-          placeholder="輸入帳號"
-        >
+      <label for="accountInput">帳號</label>
 
-        <button id="switchAccountBtn" type="button">
-          切換帳號
-        </button>
+      <input
+        type="text"
+        id="accountInput"
+        value="user1"
+        placeholder="輸入帳號"
+      >
 
-        <button id="refreshBtn" type="button" class="secondary">
-          重新整理
-        </button>
-      </div>
-    </div>
+      <button id="switchAccountBtn" type="button">
+        切換帳號
+      </button>
 
-    <div class="summary">
-
-      <div class="summary-box">
-        <div class="summary-title">持股市值</div>
-        <div class="summary-value" id="totalMarketValue">
-          0
-        </div>
-      </div>
-
-      <div class="summary-box">
-        <div class="summary-title">投入成本</div>
-        <div class="summary-value" id="totalCost">
-          0
-        </div>
-      </div>
-
-      <div class="summary-box">
-        <div class="summary-title">未實現損益</div>
-        <div class="summary-value" id="totalUnrealized">
-          0
-        </div>
-      </div>
-
-      <div class="summary-box">
-        <div class="summary-title">已實現損益</div>
-        <div class="summary-value" id="totalRealized">
-          0
-        </div>
-      </div>
+      <button id="refreshBtn" type="button" class="secondary">
+        重新整理
+      </button>
 
     </div>
+  </div>
 
-    <div class="card">
+  <div class="summary">
 
-      <h2>新增 / 編輯持股</h2>
+    <div class="summary-box">
+      <div class="summary-title">持股市值</div>
+      <div class="summary-value" id="totalMarketValue">0</div>
+    </div>
 
-      <form id="stockForm">
+    <div class="summary-box">
+      <div class="summary-title">投入成本</div>
+      <div class="summary-value" id="totalCost">0</div>
+    </div>
 
-        <div class="form-grid">
+    <div class="summary-box">
+      <div class="summary-title">未實現損益</div>
+      <div class="summary-value" id="totalUnrealized">0</div>
+    </div>
 
-          <div class="form-item">
-            <label for="stockSymbol">股票代號</label>
+    <div class="summary-box">
+      <div class="summary-title">已實現損益</div>
+      <div class="summary-value" id="totalRealized">0</div>
+    </div>
 
-            <input
-              type="text"
-              id="stockSymbol"
-              placeholder="例如：2330.TW"
-              required
-            >
-          </div>
+  </div>
 
-          <div class="form-item">
-            <label for="stockName">股票名稱</label>
+  <div class="card">
 
-            <input
-              type="text"
-              id="stockName"
-              placeholder="例如：台積電"
-            >
-          </div>
+    <h2>新增 / 編輯持股</h2>
 
-          <div class="form-item">
-            <label for="stockShares">股數</label>
+    <form id="addForm">
 
-            <input
-              type="number"
-              id="stockShares"
-              min="0"
-              step="1"
-              placeholder="1000"
-              required
-            >
-          </div>
+      <div class="form-grid">
 
-          <div class="form-item">
-            <label for="stockPrice">平均成本</label>
+        <div class="form-item">
+          <label for="symbol">股票代號</label>
+          <input
+            type="text"
+            id="symbol"
+            placeholder="例如 2330"
+            required
+          >
+        </div>
 
-            <input
-              type="number"
-              id="stockPrice"
-              min="0"
-              step="0.01"
-              placeholder="1000"
-              required
-            >
-          </div>
+        <div class="form-item">
+          <label for="name">股票名稱</label>
+          <input
+            type="text"
+            id="name"
+            placeholder="例如 台積電"
+          >
+        </div>
 
-          <div class="form-actions">
+        <div class="form-item">
+          <label for="market">市場</label>
+          <select id="market">
+            <option value="TW">上市 TW</option>
+            <option value="TWO">上櫃 TWO</option>
+            <option value="US">美股 US</option>
+          </select>
+        </div>
 
-            <button type="submit">
-              儲存
-            </button>
+        <div class="form-item">
+          <label for="cost">平均成本</label>
+          <input
+            type="number"
+            id="cost"
+            min="0"
+            step="0.01"
+            placeholder="1000"
+            required
+          >
+        </div>
 
-            <button
-              type="button"
-              id="cancelEditBtn"
-              class="secondary"
-              style="display:none;"
-            >
-              取消
-            </button>
+        <div class="form-item">
+          <label for="qty">股數</label>
+          <input
+            type="number"
+            id="qty"
+            min="0"
+            step="1"
+            placeholder="1000"
+            required
+          >
+        </div>
 
-          </div>
+        <div class="form-actions">
+
+          <button type="submit">
+            儲存
+          </button>
+
+          <button
+            type="button"
+            id="cancelEditBtn"
+            class="secondary"
+            style="display:none;"
+          >
+            取消
+          </button>
 
         </div>
 
-      </form>
-
-      <div class="status" id="syncStatus">
-        準備完成
       </div>
 
+    </form>
+
+    <div class="status" id="syncStatus">
+      準備完成
     </div>
 
-    <div class="card">
+  </div>
 
-      <h2>目前持股</h2>
+  <div class="card">
 
-      <div class="table-wrapper">
+    <h2>目前持股</h2>
 
-        <table>
+    <div class="table-wrapper">
 
-          <thead>
-            <tr>
-              <th>股票代號</th>
-              <th>名稱</th>
-              <th>股數</th>
-              <th>平均成本</th>
-              <th>目前價格</th>
-              <th>投入成本</th>
-              <th>目前市值</th>
-              <th>未實現損益</th>
-              <th>報酬率</th>
-              <th>操作</th>
-            </tr>
-          </thead>
+      <table>
 
-          <tbody id="holdingsBody">
-            <tr>
-              <td colspan="10" class="empty">
-                尚無持股資料
-              </td>
-            </tr>
-          </tbody>
+        <thead>
+          <tr>
+            <th>股票代號</th>
+            <th>名稱</th>
+            <th>市場</th>
+            <th>股數</th>
+            <th>平均成本</th>
+            <th>目前價格</th>
+            <th>投入成本</th>
+            <th>目前市值</th>
+            <th>未實現損益</th>
+            <th>報酬率</th>
+            <th>操作</th>
+          </tr>
+        </thead>
 
-        </table>
+        <tbody id="holdingsBody">
 
-      </div>
+          <tr>
+            <td colspan="11" class="empty">
+              尚無持股資料
+            </td>
+          </tr>
 
-    </div>
+        </tbody>
 
-    <div class="card">
-
-      <h2>已實現損益</h2>
-
-      <div class="table-wrapper">
-
-        <table>
-
-          <thead>
-            <tr>
-              <th>股票代號</th>
-              <th>名稱</th>
-              <th>賣出股數</th>
-              <th>買入成本</th>
-              <th>賣出價格</th>
-              <th>賣出金額</th>
-              <th>已實現損益</th>
-              <th>報酬率</th>
-              <th>日期</th>
-              <th>操作</th>
-            </tr>
-          </thead>
-
-          <tbody id="realizedBody">
-            <tr>
-              <td colspan="10" class="empty">
-                尚無已實現損益
-              </td>
-            </tr>
-          </tbody>
-
-        </table>
-
-      </div>
+      </table>
 
     </div>
 
   </div>
 
-  <script src="app.js?v=20261008"></script>
+  <div class="card">
+
+    <h2>已實現損益</h2>
+
+    <div class="table-wrapper">
+
+      <table>
+
+        <thead>
+          <tr>
+            <th>股票代號</th>
+            <th>名稱</th>
+            <th>賣出股數</th>
+            <th>買入成本</th>
+            <th>賣出價格</th>
+            <th>賣出金額</th>
+            <th>已實現損益</th>
+            <th>報酬率</th>
+            <th>日期</th>
+            <th>操作</th>
+          </tr>
+        </thead>
+
+        <tbody id="realizedBody">
+
+          <tr>
+            <td colspan="10" class="empty">
+              尚無已實現損益
+            </td>
+          </tr>
+
+        </tbody>
+
+      </table>
+
+    </div>
+
+  </div>
+
+</div>
+
+<script src="app.js?v=20261008"></script>
 
 </body>
 </html>
