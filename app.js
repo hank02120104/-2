@@ -1,1478 +1,398 @@
+// 已自動填入你的 Worker URL
 const WORKER_URL = "https://stock-proxy.honggu0212.workers.dev";
 
 const urlParams = new URLSearchParams(window.location.search);
-
-let currentAccount =
-  urlParams.get("account") ||
-  localStorage.getItem("currentAccount") ||
-  "user1";
+let currentAccount = urlParams.get("account") || localStorage.getItem("currentAccount") || "user1";
 
 let holdings = [];
 let realizedList = [];
-let usdTwdRate = 32.25;
+let usdTwdRate = 32.25; 
 let liveQuotes = {};
+
 let countdownSeconds = 60;
 let timerInterval = null;
 
-
 document.addEventListener("DOMContentLoaded", async () => {
-
   const accountInput = document.getElementById("accountInput");
-
-  if (accountInput) {
-    accountInput.value = currentAccount;
-  }
-
+  if (accountInput) accountInput.value = currentAccount;
+  
   updateAccountTitle();
 
+  // 1. 載入雲端資料
   await loadDataFromRemote();
 
+  // 2. 載入即時報價
   await fetchData();
 
+  // 3. 啟動計時器
   startCountdown();
 
-
+  // 4. 表單提交
   const form = document.getElementById("addForm");
-
   if (form) {
-
     form.addEventListener("submit", async (e) => {
-
       e.preventDefault();
+      let symbol = document.getElementById("symbol").value.trim().toUpperCase();
+      const name = document.getElementById("name").value.trim();
+      const market = document.getElementById("market").value;
+      const cost = parseFloat(document.getElementById("cost").value);
+      const qty = parseFloat(document.getElementById("qty").value);
 
-      let symbol =
-        document
-          .getElementById("symbol")
-          .value
-          .trim()
-          .toUpperCase();
-
-      const name =
-        document
-          .getElementById("name")
-          .value
-          .trim();
-
-      const market =
-        document
-          .getElementById("market")
-          .value;
-
-      const cost =
-        parseFloat(
-          document
-            .getElementById("cost")
-            .value
-        );
-
-      const qty =
-        parseFloat(
-          document
-            .getElementById("qty")
-            .value
-        );
-
-
-      if (
-        !symbol ||
-        !name ||
-        !Number.isFinite(cost) ||
-        !Number.isFinite(qty) ||
-        cost <= 0 ||
-        qty <= 0
-      ) {
-
-        alert(
-          "請填寫正確的股票代號、名稱、成本與股數"
-        );
-
+      if (!symbol || isNaN(cost) || isNaN(qty)) {
+        alert("請填寫正確的股票代號、成本與股數");
         return;
       }
 
+      if (market === "TW" && !symbol.includes(".")) symbol += ".TW";
+      if (market === "TWO" && !symbol.includes(".")) symbol += ".TWO";
 
-      if (
-        market === "TW" &&
-        !symbol.includes(".")
-      ) {
-        symbol += ".TW";
-      }
-
-
-      if (
-        market === "TWO" &&
-        !symbol.includes(".")
-      ) {
-        symbol += ".TWO";
-      }
-
-
-      const index =
-        holdings.findIndex(
-          h => h.symbol === symbol
-        );
-
-
-      const stock = {
-        symbol,
-        name,
-        market,
-        cost,
-        qty
-      };
-
-
-      if (index >= 0) {
-
-        holdings[index] = stock;
-
+      const idx = holdings.findIndex(h => h.symbol === symbol);
+      if (idx >= 0) {
+        holdings[idx] = { symbol, name, market, cost, qty };
       } else {
-
-        holdings.push(stock);
-
+        holdings.push({ symbol, name, market, cost, qty });
       }
 
-
-      const success =
-        await saveAndSync();
-
-
-      if (success) {
-
-        form.reset();
-
-        alert(
-          "持股已儲存到雲端"
-        );
-
-        await fetchData();
-
-      }
-
+      await saveAndSync();
+      form.reset();
     });
-
   }
-
 });
 
-
+// 切換帳號處理
 async function switchAccount() {
-
-  const accountInput =
-    document.getElementById(
-      "accountInput"
-    );
-
-  if (!accountInput) {
-    return;
-  }
-
-
-  const newAccount =
-    accountInput.value
-      .trim()
-      .toLowerCase();
-
+  const accountInput = document.getElementById("accountInput");
+  const newAccount = accountInput.value.trim().toLowerCase();
 
   if (!newAccount) {
-
-    alert(
-      "請輸入有效的帳號名稱"
-    );
-
+    alert("請輸入有效的帳號名稱");
     return;
   }
 
-
-  currentAccount =
-    newAccount;
-
-
-  localStorage.setItem(
-    "currentAccount",
-    currentAccount
-  );
-
-
-  const newUrl =
-    `${window.location.pathname}?account=${encodeURIComponent(currentAccount)}`;
-
-
-  window.history.replaceState(
-    {},
-    "",
-    newUrl
-  );
-
-
+  currentAccount = newAccount;
+  localStorage.setItem("currentAccount", currentAccount);
   updateAccountTitle();
 
-
-  holdings = [];
-  realizedList = [];
-  liveQuotes = {};
-
-
-  renderAll();
-
-
   await loadDataFromRemote();
-
   await fetchData();
-
 }
-
-
-window.switchAccount =
-  switchAccount;
-
-
+window.switchAccount = switchAccount;
 
 function updateAccountTitle() {
-
-  document
-    .querySelectorAll(".accountTitle")
-    .forEach(el => {
-
-      el.textContent =
-        currentAccount;
-
-    });
-
+  document.querySelectorAll(".accountTitle").forEach(el => el.textContent = currentAccount);
 }
 
+// 賣出股票邏輯
+function sellStock(symbol) {
+  const item = holdings.find(h => h.symbol === symbol);
+  if (!item) return;
 
+  const currentPrice = liveQuotes[symbol] || item.cost;
+  const sellQtyStr = prompt(`【賣出 ${item.name || item.symbol}】\n目前持有股數：${item.qty}\n請輸入賣出股數：`, item.qty);
+  if (sellQtyStr === null) return;
 
-async function sellStock(symbol) {
-
-  const item =
-    holdings.find(
-      h =>
-        h.symbol === symbol
-    );
-
-
-  if (!item) {
+  const sellQty = parseFloat(sellQtyStr);
+  if (isNaN(sellQty) || sellQty <= 0 || sellQty > item.qty) {
+    alert("請輸入有效的賣出股數！");
     return;
   }
 
+  const sellPriceStr = prompt(`請輸入賣出單價 (原幣)：`, currentPrice);
+  if (sellPriceStr === null) return;
 
-  const currentPrice =
-    liveQuotes[symbol] ??
-    item.cost;
-
-
-  const sellQtyString =
-    prompt(
-      `【賣出 ${item.name || item.symbol}】
-目前持有股數：${item.qty}
-請輸入賣出股數：`,
-      item.qty
-    );
-
-
-  if (sellQtyString === null) {
+  const sellPrice = parseFloat(sellPriceStr);
+  if (isNaN(sellPrice) || sellPrice <= 0) {
+    alert("請輸入有效的賣出單價！");
     return;
   }
 
-
-  const sellQty =
-    parseFloat(
-      sellQtyString
-    );
-
-
-  if (
-    !Number.isFinite(sellQty) ||
-    sellQty <= 0 ||
-    sellQty > item.qty
-  ) {
-
-    alert(
-      "請輸入有效的賣出股數！"
-    );
-
-    return;
-  }
-
-
-  const sellPriceString =
-    prompt(
-      "請輸入賣出單價 (原幣)：",
-      currentPrice
-    );
-
-
-  if (sellPriceString === null) {
-    return;
-  }
-
-
-  const sellPrice =
-    parseFloat(
-      sellPriceString
-    );
-
-
-  if (
-    !Number.isFinite(sellPrice) ||
-    sellPrice <= 0
-  ) {
-
-    alert(
-      "請輸入有效的賣出單價！"
-    );
-
-    return;
-  }
-
-
-  const rate =
-    item.market === "US"
-      ? usdTwdRate
-      : 1;
-
-
-  const pnlOrig =
-    (sellPrice - item.cost) *
-    sellQty;
-
-
-  const pnlTwd =
-    pnlOrig * rate;
-
+  const rate = item.market === "US" ? usdTwdRate : 1;
+  const pnlOrig = (sellPrice - item.cost) * sellQty;
+  const pnlTwd = pnlOrig * rate;
 
   realizedList.unshift({
-
     id: Date.now(),
-
-    date:
-      new Date().toLocaleDateString(
-        "zh-TW"
-      ),
-
-    symbol:
-      item.symbol,
-
-    name:
-      item.name,
-
-    market:
-      item.market,
-
-    cost:
-      item.cost,
-
-    sellPrice:
-      sellPrice,
-
-    qty:
-      sellQty,
-
-    pnlOrig:
-      pnlOrig,
-
-    pnlTwd:
-      pnlTwd
-
+    date: new Date().toLocaleDateString('zh-TW'),
+    symbol: item.symbol,
+    name: item.name,
+    market: item.market,
+    cost: item.cost,
+    sellPrice: sellPrice,
+    qty: sellQty,
+    pnlOrig: pnlOrig,
+    pnlTwd: pnlTwd
   });
 
-
-  if (
-    sellQty === item.qty
-  ) {
-
-    holdings =
-      holdings.filter(
-        h =>
-          h.symbol !== symbol
-      );
-
+  if (sellQty === item.qty) {
+    holdings = holdings.filter(h => h.symbol !== symbol);
   } else {
-
     item.qty -= sellQty;
-
   }
 
-
-  const success =
-    await saveAndSync();
-
-
-  if (success) {
-
-    alert(
-      "賣出紀錄已同步到雲端"
-    );
-
-    await fetchData();
-
-  }
-
+  saveAndSync();
 }
+window.sellStock = sellStock;
 
-
-window.sellStock =
-  sellStock;
-
-
-
-async function deleteRealized(id) {
-
-  if (
-    !confirm(
-      "確定刪除這筆賣出紀錄？"
-    )
-  ) {
-
-    return;
-
+// 刪除已實現紀錄
+function deleteRealized(id) {
+  if (confirm("確定刪除這筆賣出紀錄？")) {
+    realizedList = realizedList.filter(r => r.id !== id);
+    saveAndSync();
   }
-
-
-  realizedList =
-    realizedList.filter(
-      r =>
-        r.id !== id
-    );
-
-
-  await saveAndSync();
-
 }
+window.deleteRealized = deleteRealized;
 
-
-window.deleteRealized =
-  deleteRealized;
-
-
-
+// 從 Worker 載入資料
 async function loadDataFromRemote() {
-
   try {
+    const res = await fetch(`${WORKER_URL}?action=get_holdings&account=${encodeURIComponent(currentAccount)}`);
 
-    const requestUrl =
-      `${WORKER_URL}?action=get_holdings&account=${encodeURIComponent(currentAccount)}`;
-
-
-    console.log(
-      "讀取雲端資料:",
-      requestUrl
-    );
-
-
-    const response =
-      await fetch(
-        requestUrl,
-        {
-          method: "GET",
-          cache: "no-store"
-        }
-      );
-
-
-    if (!response.ok) {
-
-      const errorText =
-        await response.text();
-
-      throw new Error(
-        `Worker HTTP ${response.status}: ${errorText}`
-      );
-
+    if (!res.ok) {
+      throw new Error(`Cloudflare Worker HTTP ${res.status}`);
     }
 
+    const data = await res.json();
+    holdings = Array.isArray(data.holdings) ? data.holdings : [];
+    realizedList = Array.isArray(data.realized) ? data.realized : [];
 
-    const data =
-      await response.json();
-
-
-    holdings =
-      Array.isArray(
-        data.holdings
-      )
-        ? data.holdings
-        : [];
-
-
-    realizedList =
-      Array.isArray(
-        data.realized
-      )
-        ? data.realized
-        : [];
-
-
-    console.log(
-      "雲端資料載入成功",
-      data
-    );
-
-
+    console.log("☁️ 雲端資料載入成功:", { account: currentAccount, holdings, realized: realizedList });
     renderAll();
-
-    return true;
-
-
-  } catch (error) {
-
-    console.error(
-      "讀取雲端失敗:",
-      error
-    );
-
-
-    holdings = [];
-
-    realizedList = [];
-
-
+  } catch (e) {
+    console.error("❌ 讀取雲端失敗:", e);
+    alert(`無法讀取雲端資料，請檢查網路連線與 Cloudflare Worker。\n錯誤: ${e.message}`);
     renderAll();
-
-
-    return false;
-
   }
-
 }
 
-
-
-async function saveAndSync() {
-
-  renderAll();
-
-
-  try {
-
-    const requestUrl =
-      `${WORKER_URL}?action=sync_holdings&account=${encodeURIComponent(currentAccount)}`;
-
-
-    const response =
-      await fetch(
-        requestUrl,
-        {
-          method: "POST",
-
-          headers: {
-            "Content-Type":
-              "application/json"
-          },
-
-          body:
-            JSON.stringify({
-              holdings:
-                holdings,
-
-              realized:
-                realizedList
-            })
-        }
-      );
-
-
-    if (!response.ok) {
-
-      const errorText =
-        await response.text();
-
-      throw new Error(
-        `Worker HTTP ${response.status}: ${errorText}`
-      );
-
-    }
-
-
-    const result =
-      await response.json();
-
-
-    console.log(
-      "雲端同步成功:",
-      result
-    );
-
-
-    return true;
-
-
-  } catch (error) {
-
-    console.error(
-      "雲端同步失敗:",
-      error
-    );
-
-
-    alert(
-      "雲端同步失敗！\n\n" +
-      error.message
-    );
-
-
-    return false;
-
-  }
-
-}
-
-
-
+// 動態倒數計時器
 function startCountdown() {
-
-  if (timerInterval) {
-
-    clearInterval(
-      timerInterval
-    );
-
-  }
-
-
+  if (timerInterval) clearInterval(timerInterval);
   countdownSeconds = 60;
 
-  updateCountdown();
-
-
-  timerInterval =
-    setInterval(
-      async () => {
-
-        countdownSeconds--;
-
-        updateCountdown();
-
-
-        if (
-          countdownSeconds <= 0
-        ) {
-
-          countdownSeconds = 60;
-
-          await loadDataFromRemote();
-
-          await fetchData();
-
-        }
-
-      },
-      1000
-    );
-
-}
-
-
-
-function updateCountdown() {
-
-  const element =
-    document.getElementById(
-      "countdownText"
-    );
-
-
-  if (element) {
-
-    element.textContent =
-      `${countdownSeconds} 秒後更新`;
-
-  }
-
-}
-
-
-
-async function manualRefresh() {
-
-  const button =
-    document.querySelector(
-      ".btn-refresh"
-    );
-
-
-  if (button) {
-
-    button.disabled =
-      true;
-
-    button.textContent =
-      "更新中...";
-
-  }
-
-
-  countdownSeconds = 60;
-
-  updateCountdown();
-
-
-  await loadDataFromRemote();
-
-  await fetchData();
-
-
-  if (button) {
-
-    button.disabled =
-      false;
-
-    button.textContent =
-      "立即更新";
-
-  }
-
-}
-
-
-window.manualRefresh =
-  manualRefresh;
-
-
-
-async function deleteStock(symbol) {
-
-  if (
-    !confirm(
-      `確定刪除未實現持股 ${symbol}？`
-    )
-  ) {
-
-    return;
-
-  }
-
-
-  holdings =
-    holdings.filter(
-      h =>
-        h.symbol !== symbol
-    );
-
-
-  await saveAndSync();
-
-  await fetchData();
-
-}
-
-
-window.deleteStock =
-  deleteStock;
-
-
-
-async function fetchData() {
-
-  if (
-    holdings.length === 0
-  ) {
-
-    renderAll();
-
-    return;
-
-  }
-
-
-  const symbols =
-    holdings.map(
-      h =>
-        h.symbol
-    );
-
-
-  if (
-    !symbols.includes(
-      "USDTWD=X"
-    )
-  ) {
-
-    symbols.push(
-      "USDTWD=X"
-    );
-
-  }
-
-
-  try {
-
-    const requestUrl =
-      `${WORKER_URL}?symbols=${encodeURIComponent(symbols.join(","))}`;
-
-
-    console.log(
-      "更新即時報價:",
-      symbols
-    );
-
-
-    const response =
-      await fetch(
-        requestUrl,
-        {
-          method: "GET",
-          cache: "no-store"
-        }
-      );
-
-
-    if (!response.ok) {
-
-      const errorText =
-        await response.text();
-
-      throw new Error(
-        `Worker HTTP ${response.status}: ${errorText}`
-      );
-
+  timerInterval = setInterval(async () => {
+    countdownSeconds--;
+    const countdownEl = document.getElementById("countdownText");
+    if (countdownEl) countdownEl.textContent = `${countdownSeconds} 秒後更新`;
+
+    if (countdownSeconds <= 0) {
+      countdownSeconds = 60;
+      await loadDataFromRemote();
+      await fetchData();
     }
+  }, 1000);
+}
 
-
-    const data =
-      await response.json();
-
-
-    const results =
-      data?.quoteResponse?.result ||
-      [];
-
-
-    results.forEach(
-      quote => {
-
-        if (
-          quote.symbol ===
-          "USDTWD=X"
-        ) {
-
-          if (
-            Number.isFinite(
-              Number(
-                quote.regularMarketPrice
-              )
-            )
-          ) {
-
-            usdTwdRate =
-              Number(
-                quote.regularMarketPrice
-              );
-
-          }
-
-        } else {
-
-          if (
-            Number.isFinite(
-              Number(
-                quote.regularMarketPrice
-              )
-            )
-          ) {
-
-            liveQuotes[
-              quote.symbol
-            ] =
-              Number(
-                quote.regularMarketPrice
-              );
-
-          }
-
-        }
-
-      }
-    );
-
-
-  } catch (error) {
-
-    console.error(
-      "抓取股價失敗:",
-      error
-    );
-
+// 手動刷新
+async function manualRefresh() {
+  const refreshBtn = document.querySelector(".btn-refresh") || (typeof event !== 'undefined' ? event?.currentTarget : null);
+  if (refreshBtn) {
+    refreshBtn.disabled = true;
+    refreshBtn.textContent = "⏳ 更新中...";
   }
 
+  countdownSeconds = 60;
+  await loadDataFromRemote();
+  await fetchData();
 
+  if (refreshBtn) {
+    refreshBtn.disabled = false;
+    refreshBtn.textContent = "立即更新";
+  }
+}
+window.manualRefresh = manualRefresh;
+
+// 同步資料至 Cloudflare Worker
+async function saveAndSync() {
   renderAll();
 
-}
+  const payload = {
+    holdings: holdings,
+    realized: realizedList
+  };
 
+  try {
+    const res = await fetch(`${WORKER_URL}?action=sync_holdings&account=${encodeURIComponent(currentAccount)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
 
+    if (!res.ok) {
+      const errorText = await res.text();
+      throw new Error(`HTTP ${res.status}: ${errorText}`);
+    }
 
-function renderAll() {
-
-  const rateElement =
-    document.getElementById(
-      "usdTwdRate"
-    );
-
-
-  if (rateElement) {
-
-    rateElement.textContent =
-      Number(usdTwdRate).toFixed(3);
-
+    const result = await res.json();
+    console.log("☁️ 雲端同步成功:", result);
+  } catch (e) {
+    console.error("❌ 同步到 Cloudflare 失敗:", e);
+    alert(`⚠️ 雲端同步失敗！請確認 Worker 是否正確綁定 STOCK_KV。\n錯誤: ${e.message}`);
+    return;
   }
 
+  await fetchData();
+}
+
+function deleteStock(symbol) {
+  if (confirm(`確定刪除未實現持股 ${symbol}？`)) {
+    holdings = holdings.filter(h => h.symbol !== symbol);
+    saveAndSync();
+  }
+}
+window.deleteStock = deleteStock;
+
+// 抓取即時價格
+async function fetchData() {
+  if (holdings.length === 0) {
+    renderAll();
+    return;
+  }
+
+  const symbols = holdings.map(h => h.symbol);
+  if (!symbols.includes("USDTWD=X")) symbols.push("USDTWD=X");
+
+  try {
+    const res = await fetch(`${WORKER_URL}?symbols=${encodeURIComponent(symbols.join(","))}`);
+    if (res.ok) {
+      const data = await res.json();
+      const results = data.quoteResponse?.result || [];
+      results.forEach(q => {
+        if (q.symbol === "USDTWD=X") usdTwdRate = q.regularMarketPrice || usdTwdRate;
+        else liveQuotes[q.symbol] = q.regularMarketPrice;
+      });
+    }
+  } catch (e) {
+    console.error("抓取股價失敗:", e);
+  }
+
+  renderAll();
+}
+
+// 畫面渲染邏輯
+function renderAll() {
+  const rateEl = document.getElementById("usdTwdRate");
+  if (rateEl) rateEl.textContent = usdTwdRate.toFixed(3);
 
   let totalValueTwd = 0;
-
   let totalCostTwd = 0;
-
   let tickerHtml = "";
 
-
-  const grid =
-    document.getElementById(
-      "holdingsGrid"
-    );
-
-
+  // 1. 未實現持股
+  const grid = document.getElementById("holdingsGrid");
   if (grid) {
-
     grid.innerHTML = "";
 
-
-    if (
-      holdings.length === 0
-    ) {
-
-      grid.innerHTML =
-        `<div class="empty-message">
-          尚無未實現持股。
-        </div>`;
-
+    if (holdings.length === 0) {
+      grid.innerHTML = '<div style="color: var(--muted); grid-column: span 3;">尚無未實現持股。</div>';
     }
 
+    holdings.forEach(item => {
+      const price = liveQuotes[item.symbol] !== undefined ? liveQuotes[item.symbol] : item.cost;
+      const rate = item.market === "US" ? usdTwdRate : 1;
 
-    holdings.forEach(
-      item => {
+      const valTwd = price * item.qty * rate;
+      const costTwd = item.cost * item.qty * rate;
+      const pnlTwd = valTwd - costTwd;
+      const pnlRate = item.cost > 0 ? ((price - item.cost) / item.cost) * 100 : 0;
 
-        const price =
-          liveQuotes[item.symbol] !== undefined
-            ? liveQuotes[item.symbol]
-            : Number(item.cost);
+      totalValueTwd += valTwd;
+      totalCostTwd += costTwd;
 
+      const isProfit = pnlTwd >= 0;
+      const colorClass = isProfit ? "val-up" : "val-down";
+      const sign = isProfit ? "+" : "";
 
-        const rate =
-          item.market === "US"
-            ? usdTwdRate
-            : 1;
-
-
-        const valueTwd =
-          price *
-          Number(item.qty) *
-          rate;
-
-
-        const costTwd =
-          Number(item.cost) *
-          Number(item.qty) *
-          rate;
-
-
-        const pnlTwd =
-          valueTwd -
-          costTwd;
-
-
-        const pnlRate =
-          Number(item.cost) > 0
-            ? (
-                (price -
-                  Number(item.cost)) /
-                Number(item.cost)
-              ) *
-              100
-            : 0;
-
-
-        totalValueTwd +=
-          valueTwd;
-
-
-        totalCostTwd +=
-          costTwd;
-
-
-        const profit =
-          pnlTwd >= 0;
-
-
-        const colorClass =
-          profit
-            ? "val-up"
-            : "val-down";
-
-
-        const sign =
-          profit
-            ? "+"
-            : "";
-
-
-        const card =
-          document.createElement(
-            "div"
-          );
-
-
-        card.className =
-          "stock-card";
-
-
-        card.innerHTML = `
-
-          <div>
-
-            <div class="stock-header">
-
-              <span class="stock-symbol">
-
-                ${escapeHtml(
-                  item.name ||
-                  item.symbol
-                )}
-
-                (${escapeHtml(
-                  item.symbol
-                )})
-
-              </span>
-
-              <span class="badge">
-
-                ${escapeHtml(
-                  item.market
-                )}
-
-              </span>
-
-            </div>
-
-
-            <div class="stock-info">
-
-              <div>
-                現價：
-                $${Number(price).toFixed(2)}
-              </div>
-
-              <div>
-                成本：
-                $${Number(item.cost).toFixed(2)}
-              </div>
-
-              <div>
-                股數：
-                ${Number(item.qty)}
-              </div>
-
-              <div>
-                市值(NT)：
-                $${Math.round(
-                  valueTwd
-                ).toLocaleString()}
-              </div>
-
-
-              <div
-                class="pnl-box ${colorClass}"
-              >
-
-                <span>
-                  未實現損益：
-                </span>
-
-                <span>
-                  ${sign}$
-                  ${Math.round(
-                    pnlTwd
-                  ).toLocaleString()}
-                  (${sign}${pnlRate.toFixed(2)}%)
-                </span>
-
-              </div>
-
-            </div>
-
+      const card = document.createElement("div");
+      card.className = "stock-card";
+      card.innerHTML = `
+        <div>
+          <div class="stock-header">
+            <span class="stock-symbol">${item.name || item.symbol} (${item.symbol})</span>
+            <span class="badge">${item.market}</span>
           </div>
-
-
-          <div class="card-actions">
-
-            <button
-              class="btn-sell"
-              onclick="sellStock('${escapeHtml(item.symbol)}')"
-            >
-              賣出
-            </button>
-
-            <button
-              class="btn-del"
-              onclick="deleteStock('${escapeHtml(item.symbol)}')"
-            >
-              刪除
-            </button>
-
+          <div class="stock-info">
+            <div>現價: $${price.toFixed(2)}</div>
+            <div>成本: $${item.cost.toFixed(2)}</div>
+            <div>股數: ${item.qty}</div>
+            <div>市值(NT): $${Math.round(valTwd).toLocaleString()}</div>
+            <div class="pnl-box ${colorClass}">
+              <span>未實現損益:</span>
+              <span>${sign}$${Math.round(pnlTwd).toLocaleString()} (${sign}${pnlRate.toFixed(2)}%)</span>
+            </div>
           </div>
+        </div>
+        <div class="card-actions">
+          <button class="btn-sell" onclick="sellStock('${item.symbol}')">💰 賣出</button>
+          <button class="btn-del" onclick="deleteStock('${item.symbol}')">刪除</button>
+        </div>
+      `;
+      grid.appendChild(card);
 
-        `;
-
-
-        grid.appendChild(
-          card
-        );
-
-
-        tickerHtml += `
-
-          <span class="ticker-item ${colorClass}">
-
-            ${escapeHtml(
-              item.symbol
-            )}
-
-            $${Number(price).toFixed(2)}
-
-            (${sign}$${Math.round(
-              pnlTwd
-            ).toLocaleString()})
-
-          </span>
-
-        `;
-
-      }
-    );
-
+      tickerHtml += `<span class="ticker-item ${colorClass}">${item.symbol} $${price.toFixed(2)} (${sign}$${Math.round(pnlTwd).toLocaleString()})</span>`;
+    });
   }
 
+  // 2. 總統計
+  const totalPnl = totalValueTwd - totalCostTwd;
+  const totalPnlRate = totalCostTwd > 0 ? (totalPnl / totalCostTwd) * 100 : 0;
+  const pnlSign = totalPnl >= 0 ? "+" : "";
 
-  const totalPnl =
-    totalValueTwd -
-    totalCostTwd;
-
-
-  const totalPnlRate =
-    totalCostTwd > 0
-      ? (
-          totalPnl /
-          totalCostTwd
-        ) *
-        100
-      : 0;
-
-
-  const totalPnlSign =
-    totalPnl >= 0
-      ? "+"
-      : "";
-
-
-  const totalMarketValue =
-    document.getElementById(
-      "totalMarketValue"
-    );
-
-
-  if (totalMarketValue) {
-
-    totalMarketValue.textContent =
-      `$${Math.round(
-        totalValueTwd
-      ).toLocaleString()}`;
-
+  document.getElementById("totalMarketValue").textContent = `$${Math.round(totalValueTwd).toLocaleString()}`;
+  
+  const pnlEl = document.getElementById("totalPnl");
+  if (pnlEl) {
+    pnlEl.textContent = `${pnlSign}$${Math.round(totalPnl).toLocaleString()}`;
+    pnlEl.className = `stat-value ${totalPnl >= 0 ? 'val-up' : 'val-down'}`;
   }
 
-
-  const pnlElement =
-    document.getElementById(
-      "totalPnl"
-    );
-
-
-  if (pnlElement) {
-
-    pnlElement.textContent =
-      `${totalPnlSign}$${Math.round(
-        totalPnl
-      ).toLocaleString()}`;
-
-
-    pnlElement.className =
-      `stat-value ${
-        totalPnl >= 0
-          ? "val-up"
-          : "val-down"
-      }`;
-
+  const pnlRateEl = document.getElementById("totalPnlRate");
+  if (pnlRateEl) {
+    pnlRateEl.textContent = `${pnlSign}${totalPnlRate.toFixed(2)}%`;
+    pnlRateEl.className = `stat-sub ${totalPnl >= 0 ? 'val-up' : 'val-down'}`;
   }
 
+  // 3. 已實現紀錄渲染
+  let sumRealizedTwd = 0;
+  const realizedTbody = document.getElementById("realizedTableBody");
+  if (realizedTbody) {
+    realizedTbody.innerHTML = "";
 
-  const pnlRateElement =
-    document.getElementById(
-      "totalPnlRate"
-    );
-
-
-  if (pnlRateElement) {
-
-    pnlRateElement.textContent =
-      `${totalPnlSign}${totalPnlRate.toFixed(2)}%`;
-
-
-    pnlRateElement.className =
-      `stat-sub ${
-        totalPnl >= 0
-          ? "val-up"
-          : "val-down"
-      }`;
-
-  }
-
-
-  let realizedTotal = 0;
-
-
-  const realizedBody =
-    document.getElementById(
-      "realizedTableBody"
-    );
-
-
-  if (realizedBody) {
-
-    realizedBody.innerHTML = "";
-
-
-    if (
-      realizedList.length === 0
-    ) {
-
-      realizedBody.innerHTML =
-        `
-        <tr>
-          <td
-            colspan="9"
-            class="empty-table"
-          >
-            尚無已實現賣出紀錄
-          </td>
-        </tr>
-        `;
-
+    if (realizedList.length === 0) {
+      realizedTbody.innerHTML = '<tr><td colspan="9" style="text-align: center; color: var(--muted); padding: 20px;">尚無已實現賣出紀錄</td></tr>';
     } else {
+      realizedList.forEach(r => {
+        sumRealizedTwd += r.pnlTwd;
+        const isProfit = r.pnlTwd >= 0;
+        const colorClass = isProfit ? "val-up" : "val-down";
+        const sign = isProfit ? "+" : "";
 
-      realizedList.forEach(
-        record => {
-
-          realizedTotal +=
-            Number(record.pnlTwd) ||
-            0;
-
-
-          const profit =
-            Number(record.pnlTwd) >= 0;
-
-
-          const colorClass =
-            profit
-              ? "val-up"
-              : "val-down";
-
-
-          const sign =
-            profit
-              ? "+"
-              : "";
-
-
-          const row =
-            document.createElement(
-              "tr"
-            );
-
-
-          row.innerHTML = `
-
-            <td>
-              ${escapeHtml(
-                record.date
-              )}
-            </td>
-
-            <td>
-
-              <strong>
-                ${escapeHtml(
-                  record.name ||
-                  record.symbol
-                )}
-              </strong>
-
-              (${escapeHtml(
-                record.symbol
-              )})
-
-            </td>
-
-            <td>
-
-              <span class="badge">
-                ${escapeHtml(
-                  record.market
-                )}
-              </span>
-
-            </td>
-
-            <td>
-              $${Number(
-                record.cost
-              ).toFixed(2)}
-            </td>
-
-            <td>
-              $${Number(
-                record.sellPrice
-              ).toFixed(2)}
-            </td>
-
-            <td>
-              ${Number(
-                record.qty
-              )}
-            </td>
-
-            <td class="${colorClass}">
-              ${sign}$
-              ${Number(
-                record.pnlOrig
-              ).toFixed(2)}
-            </td>
-
-            <td class="${colorClass}">
-
-              <strong>
-
-                ${sign}$
-                ${Math.round(
-                  Number(
-                    record.pnlTwd
-                  )
-                ).toLocaleString()}
-
-              </strong>
-
-            </td>
-
-            <td>
-
-              <button
-                class="delete-realized"
-                onclick="deleteRealized(${Number(record.id)})"
-              >
-                刪除
-              </button>
-
-            </td>
-
-          `;
-
-
-          realizedBody.appendChild(
-            row
-          );
-
-        }
-      );
-
-    }
-
-  }
-
-
-  const realizedElement =
-    document.getElementById(
-      "totalRealizedPnl"
-    );
-
-
-  if (realizedElement) {
-
-    const sign =
-      realizedTotal >= 0
-        ? "+"
-        : "";
-
-
-    realizedElement.textContent =
-      `${sign}$${Math.round(
-        realizedTotal
-      ).toLocaleString()}`;
-
-
-    realizedElement.className =
-      `stat-value ${
-        realizedTotal >= 0
-          ? "val-up"
-          : "val-down"
-      }`;
-
-  }
-
-
-  const ticker =
-    document.getElementById(
-      "tickerTrack"
-    );
-
-
-  if (ticker) {
-
-    ticker.innerHTML =
-      tickerHtml
-        ? tickerHtml + tickerHtml
-        : `
-          <span class="ticker-item">
-            尚無持股資料
-          </span>
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${r.date}</td>
+          <td><strong>${r.name || r.symbol}</strong> (${r.symbol})</td>
+          <td><span class="badge">${r.market}</span></td>
+          <td>$${r.cost.toFixed(2)}</td>
+          <td>$${r.sellPrice.toFixed(2)}</td>
+          <td>${r.qty}</td>
+          <td class="${colorClass}">${sign}$${r.pnlOrig.toFixed(2)}</td>
+          <td class="${colorClass}"><strong>${sign}$${Math.round(r.pnlTwd).toLocaleString()}</strong></td>
+          <td><button style="background:none; border:none; color:var(--red); cursor:pointer; font-size:12px;" onclick="deleteRealized(${r.id})">刪除</button></td>
         `;
-
+        realizedTbody.appendChild(tr);
+      });
+    }
   }
 
-}
+  const realizedPnlEl = document.getElementById("totalRealizedPnl");
+  if (realizedPnlEl) {
+    const realSign = sumRealizedTwd >= 0 ? "+" : "";
+    realizedPnlEl.textContent = `${realSign}$${Math.round(sumRealizedTwd).toLocaleString()}`;
+    realizedPnlEl.className = `stat-value ${sumRealizedTwd >= 0 ? 'val-up' : 'val-down'}`;
+  }
 
-
-
-function escapeHtml(value) {
-
-  return String(
-    value ?? ""
-  )
-    .replace(
-      /&/g,
-      "&amp;"
-    )
-    .replace(
-      /</g,
-      "&lt;"
-    )
-    .replace(
-      />/g,
-      "&gt;"
-    )
-    .replace(
-      /"/g,
-      "&quot;"
-    )
-    .replace(
-      /'/g,
-      "&#039;"
-    );
-
+  // 跑馬燈
+  const tickerTrackEl = document.getElementById("tickerTrack");
+  if (tickerTrackEl) {
+    tickerTrackEl.innerHTML = tickerHtml ? (tickerHtml + tickerHtml) : '<span class="ticker-item">尚無持股資料</span>';
+  }
 }
