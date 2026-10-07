@@ -1,6 +1,6 @@
-const WORKER_URL = "https://stock-proxy.honggu0212.workers.dev";
-
-let currentAccount = localStorage.getItem("currentAccount") || "user1";
+// 優先讀取網址參數 (例如 index.html?account=user1)，若無則讀 LocalStorage，最後預設 user1
+const urlParams = new URLSearchParams(window.location.search);
+let currentAccount = urlParams.get("account") || localStorage.getItem("currentAccount") || "user1";
 let holdings = [];
 let realizedList = [];
 let usdTwdRate = 32.25; 
