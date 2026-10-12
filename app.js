@@ -6,16 +6,19 @@ let currentAccount = urlParams.get("account") || localStorage.getItem("currentAc
 
 let holdings = [];
 let realizedList = [];
-let usdTwdRate = 32.25; 
+let usdTwdRate = 32.25;
 let liveQuotes = {};
 
 let countdownSeconds = 60;
 let timerInterval = null;
 
+// 若上次同步失敗，先重試同步，避免被雲端舊資料覆蓋
+let pendingSync = false;
+
 document.addEventListener("DOMContentLoaded", async () => {
   const accountInput = document.getElementById("accountInput");
   if (accountInput) accountInput.value = currentAccount;
-  
+
   updateAccountTitle();
 
   // 1. 載入雲端資料
@@ -28,7 +31,6 @@ document.addEventListener("DOMContentLoaded", async () => {
   startCountdown();
 
   // 4. 表單提交
-// 4. 表單提交新增/編輯持股
   const form = document.getElementById("addForm");
   if (form) {
     form.addEventListener("submit", async (e) => {
@@ -58,6 +60,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       form.reset();
     });
   }
+});
 
 // 切換帳號處理
 async function switchAccount() {
@@ -70,6 +73,8 @@ async function switchAccount() {
   }
 
   currentAccount = newAccount;
+  pendingSync = false;
+  liveQuotes = {};
   localStorage.setItem("currentAccount", currentAccount);
   updateAccountTitle();
 
@@ -145,7 +150,7 @@ window.deleteRealized = deleteRealized;
 // 從 Worker 載入資料
 async function loadDataFromRemote() {
   try {
-    const res = await fetch(`${WORKER_URL}?action=get_holdings&account=${encodeURIComponent(currentAccount)}`);
+    const res = await fetch(`${WORKER_URL}?action=get_holdings&account=${encodeURIComponent(currentAccount)}&_=${Date.now()}`, { cache: "no-store" });
 
     if (!res.ok) {
       throw new Error(`Cloudflare Worker HTTP ${res.status}`);
@@ -164,6 +169,17 @@ async function loadDataFromRemote() {
   }
 }
 
+// 重新整理全部資料 (同步優先 → 讀雲端 → 抓報價)
+async function refreshAll() {
+  if (pendingSync) {
+    // 上次同步失敗：先重試，成功後 saveAndSync 內會自動抓報價
+    await saveAndSync(true);
+    return;
+  }
+  await loadDataFromRemote();
+  await fetchData();
+}
+
 // 動態倒數計時器
 function startCountdown() {
   if (timerInterval) clearInterval(timerInterval);
@@ -176,23 +192,21 @@ function startCountdown() {
 
     if (countdownSeconds <= 0) {
       countdownSeconds = 60;
-      await loadDataFromRemote();
-      await fetchData();
+      await refreshAll();
     }
   }, 1000);
 }
 
 // 手動刷新
 async function manualRefresh() {
-  const refreshBtn = document.querySelector(".btn-refresh") || (typeof event !== 'undefined' ? event?.currentTarget : null);
+  const refreshBtn = document.querySelector(".btn-refresh");
   if (refreshBtn) {
     refreshBtn.disabled = true;
     refreshBtn.textContent = "⏳ 更新中...";
   }
 
   countdownSeconds = 60;
-  await loadDataFromRemote();
-  await fetchData();
+  await refreshAll();
 
   if (refreshBtn) {
     refreshBtn.disabled = false;
@@ -202,7 +216,7 @@ async function manualRefresh() {
 window.manualRefresh = manualRefresh;
 
 // 同步資料至 Cloudflare Worker
-async function saveAndSync() {
+async function saveAndSync(silent = false) {
   renderAll();
 
   const payload = {
@@ -223,10 +237,14 @@ async function saveAndSync() {
     }
 
     const result = await res.json();
+    pendingSync = false;
     console.log("☁️ 雲端同步成功:", result);
   } catch (e) {
+    pendingSync = true;
     console.error("❌ 同步到 Cloudflare 失敗:", e);
-    alert(`⚠️ 雲端同步失敗！請確認 Worker 是否正確綁定 STOCK_KV。\n錯誤: ${e.message}`);
+    if (!silent) {
+      alert(`⚠️ 雲端同步失敗！系統會在下次更新時自動重試。\n錯誤: ${e.message}`);
+    }
     return;
   }
 
@@ -252,7 +270,10 @@ async function fetchData() {
   if (!symbols.includes("USDTWD=X")) symbols.push("USDTWD=X");
 
   try {
-    const res = await fetch(`${WORKER_URL}?symbols=${encodeURIComponent(symbols.join(","))}`);
+    const res = await fetch(
+      `${WORKER_URL}?symbols=${encodeURIComponent(symbols.join(","))}&_=${Date.now()}`,
+      { cache: "no-store" }
+    );
     if (res.ok) {
       const data = await res.json();
       const results = data.quoteResponse?.result || [];
@@ -260,6 +281,9 @@ async function fetchData() {
         if (q.symbol === "USDTWD=X") usdTwdRate = q.regularMarketPrice || usdTwdRate;
         else liveQuotes[q.symbol] = q.regularMarketPrice;
       });
+
+      const missing = holdings.filter(h => liveQuotes[h.symbol] === undefined).map(h => h.symbol);
+      if (missing.length) console.warn("抓不到報價:", missing);
     }
   } catch (e) {
     console.error("抓取股價失敗:", e);
@@ -338,7 +362,7 @@ function renderAll() {
   const pnlSign = totalPnl >= 0 ? "+" : "";
 
   document.getElementById("totalMarketValue").textContent = `$${Math.round(totalValueTwd).toLocaleString()}`;
-  
+
   const pnlEl = document.getElementById("totalPnl");
   if (pnlEl) {
     pnlEl.textContent = `${pnlSign}$${Math.round(totalPnl).toLocaleString()}`;
