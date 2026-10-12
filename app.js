@@ -28,6 +28,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   startCountdown();
 
   // 4. 表單提交
+// 4. 表單提交新增/編輯持股
   const form = document.getElementById("addForm");
   if (form) {
     form.addEventListener("submit", async (e) => {
@@ -57,7 +58,6 @@ document.addEventListener("DOMContentLoaded", async () => {
       form.reset();
     });
   }
-});
 
 // 切換帳號處理
 async function switchAccount() {
