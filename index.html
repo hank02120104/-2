@@ -110,6 +110,13 @@
       margin-top: 12px;
     }
 
+    .form-hint {
+      font-size: 12px;
+      color: var(--muted);
+      margin-top: 10px;
+      min-height: 16px;
+    }
+
     input, select, button {
       padding: 10px 14px;
       border-radius: 8px;
@@ -127,6 +134,7 @@
       cursor: pointer;
       border: none;
     }
+    button.btn-add:disabled { opacity: 0.6; cursor: wait; }
 
     .section-title { font-size: 20px; margin: 24px 0 16px 0; }
 
@@ -134,6 +142,7 @@
       display: grid;
       grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
       gap: 16px;
+      align-items: start;
     }
 
     .stock-card {
@@ -146,7 +155,7 @@
       justify-content: space-between;
     }
 
-    .stock-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+    .stock-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; gap: 8px; }
     .stock-symbol { font-size: 18px; font-weight: bold; }
     .badge { font-size: 11px; padding: 2px 8px; border-radius: 4px; background: #232d42; }
 
@@ -158,6 +167,11 @@
       margin-bottom: 12px;
     }
 
+    .span2 { grid-column: span 2; }
+
+    .chg { font-size: 12px; font-weight: bold; margin-left: 6px; }
+    .chg-na { color: var(--muted); font-weight: normal; }
+
     .pnl-box {
       grid-column: span 2;
       border-top: 1px dashed var(--border);
@@ -165,6 +179,45 @@
       display: flex;
       justify-content: space-between;
       font-weight: bold;
+    }
+
+    .lots-toggle {
+      cursor: pointer;
+      font-size: 12px;
+      color: var(--accent);
+      user-select: none;
+      padding: 4px 0;
+    }
+    .lots-toggle:hover { text-decoration: underline; }
+
+    .lots-list {
+      margin-top: 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .lot-row {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 4px 10px;
+      font-size: 12px;
+      background: #0f1626;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 6px 8px;
+    }
+    .lot-date { color: var(--muted); }
+
+    .btn-lot-del {
+      background: none;
+      border: none;
+      color: var(--red);
+      cursor: pointer;
+      font-size: 12px;
+      padding: 0 4px;
     }
 
     .card-actions {
@@ -284,20 +337,22 @@
   </div>
 
   <div class="form-card">
-    <h3 style="font-size: 16px;">新增 / 編輯持股</h3>
+    <h3 style="font-size: 16px;">新增持股 <span style="font-size: 12px; color: var(--muted); font-weight: normal;">（同一檔股票會自動合併成本）</span></h3>
     <form id="addForm">
       <div class="form-grid">
-        <input type="text" id="symbol" placeholder="代號 (如: 2330, NVDA)" required>
-        <input type="text" id="name" placeholder="名稱 (如: 台積電, 輝達)" required>
+        <input type="text" id="symbol" placeholder="代號 (如: 2330, NVDA)" autocomplete="off">
+        <input type="text" id="name" placeholder="名稱 (如: 台積電, 輝達)" autocomplete="off">
         <select id="market">
           <option value="TW">台股 (上市 .TW)</option>
           <option value="TWO">台股 (上櫃 .TWO)</option>
           <option value="US">美股 (USD)</option>
         </select>
-        <input type="number" id="cost" step="0.01" placeholder="買入成本" required>
-        <input type="number" id="qty" step="1" placeholder="持有股數" required>
+        <input type="number" id="cost" step="any" min="0" placeholder="買入成本 (每股)" required>
+        <input type="number" id="qtyLots" step="1" min="0" placeholder="張數 (1張=1000股)">
+        <input type="number" id="qtyOdd" step="any" min="0" placeholder="零股股數 (可留空)">
         <button type="submit" class="btn-add">加入投資組合</button>
       </div>
+      <div class="form-hint" id="lookupHint">💡 代號與名稱只需填其中一個，填完離開欄位會自動帶出另一個。</div>
     </form>
   </div>
 
@@ -329,6 +384,6 @@
   </div>
 
   <!-- 帶版本號引入腳本，防手機瀏覽器快取 -->
-  <script src="app.js?v=2.0.1"></script>
+  <script src="app.js?v=2.1.0"></script>
 </body>
 </html>
