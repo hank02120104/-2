@@ -19,10 +19,6 @@ let timerInterval = null;
 // 若上次同步失敗，先重試同步，避免被雲端舊資料覆蓋
 let pendingSync = false;
 
-// 自動帶入欄位用
-let autoFilledField = null; // "symbol" 或 "name"：代表該欄是系統自動填的
-let lookupSeq = 0;
-
 // ---------- 小工具 ----------
 function uid() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -129,93 +125,12 @@ function updateQtyInputs() {
 }
 window.updateQtyInputs = updateQtyInputs;
 
-function setHint(text) {
-  const el = document.getElementById("lookupHint");
-  if (el) el.textContent = text;
-}
-
-async function lookupStock(q) {
-  try {
-    const res = await fetch(`${WORKER_URL}?action=lookup&q=${encodeURIComponent(q)}`);
-    if (!res.ok) return [];
-    const data = await res.json();
-    return Array.isArray(data.matches) ? data.matches : [];
-  } catch (e) {
-    console.error("查詢股票失敗:", e);
-    return [];
-  }
-}
-
-async function autoFill(source) {
-  const symEl = document.getElementById("symbol");
-  const nameEl = document.getElementById("name");
-  const marketEl = document.getElementById("market");
-
-  const other = source === "symbol" ? "name" : "symbol";
-  const srcVal = (source === "symbol" ? symEl : nameEl).value.trim();
-  const otherVal = (source === "symbol" ? nameEl : symEl).value.trim();
-
-  if (!srcVal) return;
-  // 另一欄是使用者自己填的，就不要覆蓋
-  if (otherVal && autoFilledField !== other) return;
-
-  const seq = ++lookupSeq;
-  setHint("🔍 查詢中...");
-  const matches = await lookupStock(srcVal);
-  if (seq !== lookupSeq) return; // 過期的查詢結果，忽略
-
-  let hit;
-  if (source === "symbol") {
-    hit = matches.find(m => codeOf(m.symbol) === codeOf(srcVal));
-  } else {
-    hit = matches[0];
-  }
-
-  if (!hit) {
-    setHint("⚠️ 找不到對應的股票，請確認輸入，或自行填寫另一欄");
-    return;
-  }
-
-  if (source === "symbol") {
-    nameEl.value = hit.name;
-  } else {
-    symEl.value = codeOf(hit.symbol);
-  }
-  autoFilledField = other;
-  marketEl.value = hit.market;
-  updateQtyInputs();
-
-  const others = matches.filter(m => m !== hit).map(m => `${m.name}(${codeOf(m.symbol)})`);
-  setHint(`✅ 已自動帶入：${hit.name} (${hit.symbol})` + (others.length ? `　其他可能：${others.join("、")}` : ""));
-}
-
-// 送出時決定最終的代號 / 名稱 / 市場
-async function resolveStock(symbol, name, market) {
-  const hasSuffix = /\.(TW|TWO)$/i.test(symbol);
-  if (symbol && name && hasSuffix) {
-    return { symbol: symbol.toUpperCase(), name, market: /\.TWO$/i.test(symbol) ? "TWO" : "TW" };
-  }
-
-  const q = symbol || name;
-  const matches = await lookupStock(q);
-  let hit = symbol
-    ? matches.find(m => codeOf(m.symbol) === codeOf(symbol))
-    : matches[0];
-
-  if (hit) {
-    return { symbol: hit.symbol, name: name || hit.name, market: hit.market };
-  }
-
-  // 查不到：只有填了代號時，依代號格式與下拉選單推測
-  if (symbol) {
-    let m = /^\d/.test(symbol) ? market : "US";
-    if (m === "US" && /^\d/.test(symbol)) m = "TW";
-    let s = symbol;
-    if (m === "TW" && !s.includes(".")) s += ".TW";
-    if (m === "TWO" && !s.includes(".")) s += ".TWO";
-    return { symbol: s, name: name || symbol, market: m };
-  }
-  return null;
+// 依市場補上 .TW / .TWO 後綴
+function buildSymbol(symbol, market) {
+  let s = symbol.toUpperCase();
+  if (market === "TW" && !s.includes(".")) s += ".TW";
+  if (market === "TWO" && !s.includes(".")) s += ".TWO";
+  return s;
 }
 
 function addLot(symbol, name, market, cost, qty) {
@@ -236,22 +151,12 @@ function setupFormEvents() {
   const form = document.getElementById("addForm");
 
   if (marketEl) marketEl.addEventListener("change", updateQtyInputs);
-
-  if (symEl) {
-    symEl.addEventListener("input", () => { if (autoFilledField === "symbol") autoFilledField = null; });
-    symEl.addEventListener("change", () => autoFill("symbol"));
-  }
-  if (nameEl) {
-    nameEl.addEventListener("input", () => { if (autoFilledField === "name") autoFilledField = null; });
-    nameEl.addEventListener("change", () => autoFill("name"));
-  }
-
   if (!form) return;
+
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
-    lookupSeq++; // 讓進行中的自動帶入失效
 
-    const symbol = symEl.value.trim().toUpperCase();
+    const symbolRaw = symEl.value.trim();
     const name = nameEl.value.trim();
     const market = marketEl.value;
     const cost = parseFloat(document.getElementById("cost").value);
@@ -259,8 +164,8 @@ function setupFormEvents() {
     const oddCount = parseFloat(document.getElementById("qtyOdd").value) || 0;
     const qty = market === "US" ? oddCount : lotCount * 1000 + oddCount;
 
-    if (!symbol && !name) {
-      alert("請至少輸入股票代號或名稱其中一個");
+    if (!symbolRaw || !name) {
+      alert("請輸入股票代號與名稱");
       return;
     }
     if (isNaN(cost) || cost <= 0) {
@@ -272,25 +177,12 @@ function setupFormEvents() {
       return;
     }
 
-    const submitBtn = form.querySelector("button[type=submit]");
-    if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = "處理中..."; }
+    const symbol = buildSymbol(symbolRaw, market);
+    addLot(symbol, name, market, cost, qty);
+    await saveAndSync();
 
-    try {
-      const stock = await resolveStock(symbol, name, market);
-      if (!stock) {
-        alert("找不到對應的股票，請確認代號或名稱是否正確");
-        return;
-      }
-
-      addLot(stock.symbol, stock.name, stock.market, cost, qty);
-      await saveAndSync();
-      form.reset();
-      autoFilledField = null;
-      setHint("");
-      updateQtyInputs();
-    } finally {
-      if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = "加入投資組合"; }
-    }
+    form.reset();
+    updateQtyInputs();
   });
 }
 
