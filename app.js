@@ -456,6 +456,8 @@ async function fetchData() {
           usdTwdRate = q.regularMarketPrice || usdTwdRate;
         } else {
           if (!(q.regularMarketPrice > 0)) return; // 價格為 0 或無效時，保留上次的價格
+          // 這次只拿到昨收/日資料 (過期)，而且之前已有較新的價格 → 保留舊的，避免價格跳回昨收
+          if (q.stale && liveQuotes[q.symbol] !== undefined) return;
           liveQuotes[q.symbol] = q.regularMarketPrice;
           if (q.regularMarketPreviousClose) livePrev[q.symbol] = q.regularMarketPreviousClose;
           else delete livePrev[q.symbol];
