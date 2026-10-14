@@ -455,6 +455,7 @@ async function fetchData() {
         if (q.symbol === "USDTWD=X") {
           usdTwdRate = q.regularMarketPrice || usdTwdRate;
         } else {
+          if (!(q.regularMarketPrice > 0)) return; // 價格為 0 或無效時，保留上次的價格
           liveQuotes[q.symbol] = q.regularMarketPrice;
           if (q.regularMarketPreviousClose) livePrev[q.symbol] = q.regularMarketPreviousClose;
           else delete livePrev[q.symbol];
