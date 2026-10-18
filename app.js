@@ -11,6 +11,7 @@ let realizedList = [];
 let usdTwdRate = 32.25;
 let liveQuotes = {}; // 最新價
 let livePrev = {};   // 前一日收盤價 (算今日漲跌幅用)
+let liveStale = {};  // true = 目前顯示的不是即時成交價 (昨收 / 延遲價)
 let expandedSet = new Set(); // 目前展開「分批成本」的股票
 
 let countdownSeconds = 60;
@@ -88,12 +89,40 @@ function normalizeHoldings(list) {
   return [...map.values()].filter(h => h.lots.length > 0);
 }
 
+// ---------- 記住今天最後一次的成交價 (存在瀏覽器，換頁/重開也還在) ----------
+function todayStr() {
+  return new Date().toLocaleDateString("zh-TW");
+}
+
+function loadSavedQuotes() {
+  try {
+    const saved = JSON.parse(localStorage.getItem("savedQuotes") || "{}");
+    const today = todayStr();
+    for (const [sym, v] of Object.entries(saved)) {
+      if (v && v.d === today && v.p > 0) {
+        liveQuotes[sym] = v.p;
+        if (v.prev > 0) livePrev[sym] = v.prev;
+        liveStale[sym] = false;
+      }
+    }
+  } catch (e) {}
+}
+
+function saveQuote(symbol, price, prev) {
+  try {
+    const saved = JSON.parse(localStorage.getItem("savedQuotes") || "{}");
+    saved[symbol] = { p: price, prev: prev || null, d: todayStr() };
+    localStorage.setItem("savedQuotes", JSON.stringify(saved));
+  } catch (e) {}
+}
+
 // ---------- 啟動 ----------
 document.addEventListener("DOMContentLoaded", async () => {
   const accountInput = document.getElementById("accountInput");
   if (accountInput) accountInput.value = currentAccount;
 
   updateAccountTitle();
+  loadSavedQuotes();
   updateQtyInputs();
   setupFormEvents();
 
@@ -289,7 +318,9 @@ async function switchAccount() {
   pendingSync = false;
   liveQuotes = {};
   livePrev = {};
+  liveStale = {};
   expandedSet = new Set();
+  loadSavedQuotes();
   localStorage.setItem("currentAccount", currentAccount);
   updateAccountTitle();
 
@@ -549,8 +580,10 @@ async function fetchData() {
           // 只有「今天還沒抓過價格」時，才使用推算價或昨收
           if ((q.stale || q.estimated) && liveQuotes[q.symbol] !== undefined) return;
           liveQuotes[q.symbol] = q.regularMarketPrice;
+          liveStale[q.symbol] = !!(q.stale || q.estimated);
           if (q.regularMarketPreviousClose) livePrev[q.symbol] = q.regularMarketPreviousClose;
           else delete livePrev[q.symbol];
+          if (!liveStale[q.symbol]) saveQuote(q.symbol, q.regularMarketPrice, q.regularMarketPreviousClose);
         }
       });
 
@@ -636,7 +669,7 @@ function renderAll() {
             <span class="badge">${esc(item.market)}</span>
           </div>
           <div class="stock-info">
-            <div class="span2">現價: $${price.toFixed(2)} ${chgHtml}</div>
+            <div class="span2">現價: $${price.toFixed(2)} ${chgHtml}${liveStale[item.symbol] ? ' <span class="chg chg-na">(非即時)</span>' : ""}</div>
             <div>均成本: $${avg.toFixed(2)}</div>
             <div>持有: ${fmtQty(item, qty)}</div>
             <div class="span2">市值(NT): $${Math.round(valTwd).toLocaleString()}</div>
