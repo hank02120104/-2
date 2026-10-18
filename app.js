@@ -144,6 +144,67 @@ function addLot(symbol, name, market, cost, qty) {
   }
 }
 
+// ---------- 台股代號 → 名稱 自動帶入 ----------
+// 這只是「輔助」：查不到、太慢、失敗都不會擋住任何操作，名稱隨時可以自己打
+const DEFAULT_HINT = "💡 台股輸入代號後會自動帶出名稱；查不到時請自行輸入。";
+let autoFilledName = false; // 名稱欄目前的內容是系統自動填的
+let lookupSeq = 0;          // 用來丟棄過期的查詢結果
+let lookupTimer = null;
+
+function setHint(text) {
+  const el = document.getElementById("lookupHint");
+  if (el) el.textContent = text;
+}
+
+// 最多等 4 秒，逾時就當作查不到
+async function lookupTwName(code) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 4000);
+  try {
+    const res = await fetch(`${WORKER_URL}?action=lookup&q=${encodeURIComponent(code)}`, { signal: ctrl.signal });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const matches = Array.isArray(data.matches) ? data.matches : [];
+    return matches.find(m =>
+      (m.market === "TW" || m.market === "TWO") &&
+      String(m.symbol).split(".")[0].toUpperCase() === code
+    ) || null;
+  } catch (e) {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function autoFillName() {
+  const symEl = document.getElementById("symbol");
+  const nameEl = document.getElementById("name");
+  const marketEl = document.getElementById("market");
+
+  const code = symEl.value.trim().toUpperCase().replace(/\.(TWO|TW)$/, "");
+  if (!/^\d{4,6}[A-Z]?$/.test(code)) return; // 不是台股代號格式 (例如美股)，不查
+
+  // 使用者自己打了名稱，就不要覆蓋
+  if (nameEl.value.trim() && !autoFilledName) return;
+
+  const seq = ++lookupSeq;
+  setHint("🔍 查詢名稱中... (查不到也可以自己輸入)");
+
+  const hit = await lookupTwName(code);
+  if (seq !== lookupSeq) return; // 這次查詢已過期 (使用者又改了代號 / 自己打了名稱 / 已送出)
+
+  if (hit) {
+    nameEl.value = hit.name;
+    autoFilledName = true;
+    marketEl.value = hit.market; // 順便自動選對上市 / 上櫃
+    updateQtyInputs();
+    setHint(`✅ 已自動帶入：${hit.name}（可自行修改）`);
+  } else {
+    if (autoFilledName) { nameEl.value = ""; autoFilledName = false; }
+    setHint("⚠️ 查不到名稱，請自行輸入");
+  }
+}
+
 function setupFormEvents() {
   const symEl = document.getElementById("symbol");
   const nameEl = document.getElementById("name");
@@ -151,21 +212,44 @@ function setupFormEvents() {
   const form = document.getElementById("addForm");
 
   if (marketEl) marketEl.addEventListener("change", updateQtyInputs);
-  if (!form) return;
 
+  if (symEl) {
+    // 打字停下 0.6 秒後自動查；離開欄位時立刻查
+    symEl.addEventListener("input", () => {
+      clearTimeout(lookupTimer);
+      lookupTimer = setTimeout(autoFillName, 600);
+    });
+    symEl.addEventListener("change", () => {
+      clearTimeout(lookupTimer);
+      autoFillName();
+    });
+  }
+
+  if (nameEl) {
+    // 使用者自己動手改名稱 → 取消進行中的查詢，之後不再覆蓋
+    nameEl.addEventListener("input", () => {
+      autoFilledName = false;
+      lookupSeq++;
+    });
+  }
+
+  if (!form) return;
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
 
+    // 送出時：取消所有進行中的查詢，絕不等待查詢結果
+    clearTimeout(lookupTimer);
+    lookupSeq++;
+
     const symbolRaw = symEl.value.trim();
-    const name = nameEl.value.trim();
     const market = marketEl.value;
     const cost = parseFloat(document.getElementById("cost").value);
     const lotCount = parseFloat(document.getElementById("qtyLots").value) || 0;
     const oddCount = parseFloat(document.getElementById("qtyOdd").value) || 0;
     const qty = market === "US" ? oddCount : lotCount * 1000 + oddCount;
 
-    if (!symbolRaw || !name) {
-      alert("請輸入股票代號與名稱");
+    if (!symbolRaw) {
+      alert("請輸入股票代號");
       return;
     }
     if (isNaN(cost) || cost <= 0) {
@@ -177,11 +261,16 @@ function setupFormEvents() {
       return;
     }
 
+    // 名稱沒填 (查不到又沒自己打) 就先用代號當名稱，不擋住使用者
+    const name = nameEl.value.trim() || symbolRaw.toUpperCase();
     const symbol = buildSymbol(symbolRaw, market);
+
     addLot(symbol, name, market, cost, qty);
     await saveAndSync();
 
     form.reset();
+    autoFilledName = false;
+    setHint(DEFAULT_HINT);
     updateQtyInputs();
   });
 }

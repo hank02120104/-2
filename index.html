@@ -341,7 +341,7 @@
     <form id="addForm">
       <div class="form-grid">
         <input type="text" id="symbol" placeholder="代號 (如: 2330, NVDA)" autocomplete="off" required>
-        <input type="text" id="name" placeholder="名稱 (如: 台積電, 輝達)" autocomplete="off" required>
+        <input type="text" id="name" placeholder="名稱 (台股會自動帶入，可自行修改)" autocomplete="off">
         <select id="market">
           <option value="TW">台股 (上市 .TW)</option>
           <option value="TWO">台股 (上櫃 .TWO)</option>
@@ -352,7 +352,7 @@
         <input type="number" id="qtyOdd" step="any" min="0" placeholder="零股股數 (可留空)">
         <button type="submit" class="btn-add">加入投資組合</button>
       </div>
-      <div class="form-hint" id="lookupHint">💡 台股請依股票選擇「上市」或「上櫃」，1 張 = 1000 股，不足一張請填在零股欄。</div>
+      <div class="form-hint" id="lookupHint">💡 台股輸入代號後會自動帶出名稱；查不到時請自行輸入。</div>
     </form>
   </div>
 
@@ -384,6 +384,6 @@
   </div>
 
   <!-- 帶版本號引入腳本，防手機瀏覽器快取 -->
-  <script src="app.js?v=2.1.4"></script>
+  <script src="app.js?v=2.2.0"></script>
 </body>
 </html>
