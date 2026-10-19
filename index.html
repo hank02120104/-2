@@ -136,6 +136,8 @@
     }
     button.btn-add:disabled { opacity: 0.6; cursor: wait; }
 
+    input[type="month"] { color-scheme: dark; }
+
     .section-title { font-size: 20px; margin: 24px 0 16px 0; }
 
     .holdings-grid {
@@ -322,6 +324,11 @@
       <div class="stat-sub" id="totalPnlRate">0.00%</div>
     </div>
     <div class="stat-card">
+      <div class="stat-title">期貨未實現損益 (NT)</div>
+      <div class="stat-value" id="futuresPnl">$0</div>
+      <div class="stat-sub">大台/小台/微台/個股期</div>
+    </div>
+    <div class="stat-card">
       <div class="stat-title">累計已實現損益 (NT)</div>
       <div class="stat-value" id="totalRealizedPnl">$0</div>
       <div class="stat-sub">已結算獲利/虧損</div>
@@ -346,10 +353,29 @@
           <option value="TW">台股 (上市 .TW)</option>
           <option value="TWO">台股 (上櫃 .TWO)</option>
           <option value="US">美股 (USD)</option>
+          <option value="FUT">台灣期貨 (台指期 / 個股期)</option>
         </select>
         <input type="number" id="cost" step="any" min="0" placeholder="買入成本 (每股)" required>
         <input type="number" id="qtyLots" step="1" min="0" placeholder="張數 (1張=1000股)">
         <input type="number" id="qtyOdd" step="any" min="0" placeholder="零股股數 (可留空)">
+        <!-- 期貨專用欄位 (選「台灣期貨」才會顯示) -->
+        <div id="futFields" style="display: none;">
+          <select id="futProduct">
+            <option value="TXF">大台 TXF (每點 200)</option>
+            <option value="MXF">小台 MXF (每點 50)</option>
+            <option value="TMF">微台 TMF (每點 10)</option>
+            <option value="STK">個股期貨 (標準 2000 股)</option>
+            <option value="STKM">小型個股期貨 (100 股)</option>
+          </select>
+          <input type="text" id="futCid" placeholder="個股期貨代號 (如 CDF)" autocomplete="off" style="display: none;">
+          <input type="month" id="futMonth" title="到期月份">
+          <select id="futSide">
+            <option value="L">做多</option>
+            <option value="S">做空</option>
+          </select>
+          <input type="number" id="futMult" step="any" min="0" placeholder="每點價值 (NT$)">
+          <input type="number" id="futQty" step="1" min="0" placeholder="口數">
+        </div>
         <button type="submit" class="btn-add">加入投資組合</button>
       </div>
       <div class="form-hint" id="lookupHint">💡 台股輸入代號後會自動帶出名稱；查不到時請自行輸入。</div>
@@ -384,6 +410,6 @@
   </div>
 
   <!-- 帶版本號引入腳本，防手機瀏覽器快取 -->
-  <script src="app.js?v=2.2.1"></script>
+  <script src="app.js?v=2.3.0"></script>
 </body>
 </html>

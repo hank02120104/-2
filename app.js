@@ -50,6 +50,7 @@ function avgCost(h) {
 
 // 台股顯示成「X 張 Y 股」，美股顯示「X 股」
 function fmtQty(h, qty) {
+  if (h.market === "FUT") return `${+qty.toFixed(4)} 口`;
   if (h.market === "US") return `${+qty.toFixed(4)} 股`;
   const lots = Math.floor(qty / 1000 + 1e-9);
   const odd = Math.round((qty - lots * 1000) * 10000) / 10000;
@@ -58,6 +59,20 @@ function fmtQty(h, qty) {
   if (odd > 0 || lots === 0) parts.push(`${odd} 股`);
   return parts.join(" ");
 }
+
+// ---------- 期貨小工具 ----------
+// mult = 每點價值 (台指期是 NT$/點；個股期貨是每口股數，價格就是股價)
+const FUT_PRODUCTS = {
+  TXF:  { name: "大台",       cid: "TXF", mult: 200 },
+  MXF:  { name: "小台",       cid: "MXF", mult: 50 },
+  TMF:  { name: "微台",       cid: "TMF", mult: 10 },
+  STK:  { name: "個股期貨",   custom: true, mult: 2000 },
+  STKM: { name: "小型個股期貨", custom: true, mult: 100 },
+};
+const isFut = h => h.market === "FUT";
+const dirOf = h => (h.side === "S" ? -1 : 1);                 // 多 +1 / 空 -1
+const multOf = h => (isFut(h) ? (Number(h.mult) || 1) : 1);
+const marketLabel = h => (isFut(h) ? `期貨·${h.side === "S" ? "空" : "多"}` : h.market);
 
 function fmtPct(v) {
   return `${v >= 0 ? "+" : ""}${v.toFixed(2)}%`;
@@ -83,7 +98,10 @@ function normalizeHoldings(list) {
     if (map.has(h.symbol)) {
       map.get(h.symbol).lots.push(...lots);
     } else {
-      map.set(h.symbol, { symbol: h.symbol, name: h.name || "", market: h.market || "US", lots });
+      const extra = h.market === "FUT"
+        ? { fkey: h.fkey, side: h.side === "S" ? "S" : "L", mult: Number(h.mult) || 1 }
+        : {};
+      map.set(h.symbol, { symbol: h.symbol, name: h.name || "", market: h.market || "US", lots, ...extra });
     }
   });
   return [...map.values()].filter(h => h.lots.length > 0);
@@ -141,15 +159,45 @@ function updateQtyInputs() {
   const market = document.getElementById("market")?.value;
   const lotsEl = document.getElementById("qtyLots");
   const oddEl = document.getElementById("qtyOdd");
+  const symEl = document.getElementById("symbol");
+  const costEl = document.getElementById("cost");
+  const futBox = document.getElementById("futFields");
   if (!lotsEl || !oddEl) return;
 
-  if (market === "US") {
-    lotsEl.style.display = "none";
-    lotsEl.value = "";
-    oddEl.placeholder = "持有股數";
-  } else {
-    lotsEl.style.display = "";
-    oddEl.placeholder = "零股股數 (可留空)";
+  const fut = market === "FUT";
+  if (futBox) futBox.style.display = fut ? "contents" : "none";
+  if (symEl) {
+    symEl.style.display = fut ? "none" : "";
+    symEl.required = !fut; // 隱藏的必填欄位會讓瀏覽器擋住送出
+  }
+
+  lotsEl.style.display = (market === "US" || fut) ? "none" : "";
+  if (market === "US" || fut) lotsEl.value = "";
+  oddEl.style.display = fut ? "none" : "";
+  if (fut) oddEl.value = "";
+  oddEl.placeholder = market === "US" ? "持有股數" : "零股股數 (可留空)";
+  if (costEl) costEl.placeholder = fut ? "進場價 (點數；個股期貨填股價)" : "買入成本 (每股)";
+
+  if (fut) {
+    updateFutFields();
+    setHint("📈 期貨損益 = 價差 × 每點價值 × 口數 (做空反向)，未計手續費與期交稅。");
+  } else if (typeof DEFAULT_HINT !== "undefined") {
+    setHint(DEFAULT_HINT);
+  }
+}
+
+// 選商品時：帶入每點價值、個股期貨才顯示代號欄、月份預設當月
+function updateFutFields() {
+  const p = FUT_PRODUCTS[document.getElementById("futProduct")?.value];
+  if (!p) return;
+  const cidEl = document.getElementById("futCid");
+  if (cidEl) cidEl.style.display = p.custom ? "" : "none";
+  const multEl = document.getElementById("futMult");
+  if (multEl) multEl.value = p.mult;
+  const monthEl = document.getElementById("futMonth");
+  if (monthEl && !monthEl.value) {
+    const d = new Date();
+    monthEl.value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
   }
 }
 window.updateQtyInputs = updateQtyInputs;
@@ -162,15 +210,47 @@ function buildSymbol(symbol, market) {
   return s;
 }
 
-function addLot(symbol, name, market, cost, qty) {
+function addLot(symbol, name, market, cost, qty, extra = {}) {
   const lot = { id: uid(), cost, qty, date: new Date().toLocaleDateString("zh-TW") };
   const existing = holdings.find(h => h.symbol === symbol);
   if (existing) {
     existing.lots.push(lot); // 同一檔股票：加一批，成本自動合併計算
     if (!existing.name && name) existing.name = name;
   } else {
-    holdings.push({ symbol, name, market, lots: [lot] });
+    holdings.push({ symbol, name, market, lots: [lot], ...extra });
   }
+}
+
+// ---------- 新增期貨部位 ----------
+async function submitFuture(form) {
+  const prodKey = document.getElementById("futProduct").value;
+  const p = FUT_PRODUCTS[prodKey];
+  const cid = p.custom
+    ? document.getElementById("futCid").value.trim().toUpperCase()
+    : p.cid;
+  const ym = document.getElementById("futMonth").value.replace(/\D/g, ""); // 2026-11 -> 202611
+  const side = document.getElementById("futSide").value === "S" ? "S" : "L";
+  const mult = parseFloat(document.getElementById("futMult").value);
+  const qty = parseFloat(document.getElementById("futQty").value);
+  const cost = parseFloat(document.getElementById("cost").value);
+
+  if (!cid) { alert("請輸入個股期貨代號 (例如 CDF)"); return; }
+  if (!/^\d{6}$/.test(ym)) { alert("請選擇到期月份"); return; }
+  if (isNaN(cost) || cost <= 0) { alert("請輸入正確的進場價"); return; }
+  if (!(qty > 0)) { alert("請輸入口數"); return; }
+  if (!(mult > 0)) { alert("請輸入每點價值"); return; }
+
+  const fkey = `${cid}:${ym}`;
+  const symbol = `${fkey}:${side}`; // 同合約的多單、空單分開記
+  const userName = document.getElementById("name").value.trim();
+  const name = userName || `${p.custom ? cid : p.name} ${ym.slice(0, 4)}/${ym.slice(4)}`;
+
+  addLot(symbol, name, "FUT", cost, qty, { fkey, side, mult });
+  await saveAndSync();
+
+  form.reset();
+  autoFilledName = false;
+  updateQtyInputs();
 }
 
 // ---------- 台股代號 → 名稱 自動帶入 ----------
@@ -241,6 +321,8 @@ function setupFormEvents() {
   const form = document.getElementById("addForm");
 
   if (marketEl) marketEl.addEventListener("change", updateQtyInputs);
+  const futProductEl = document.getElementById("futProduct");
+  if (futProductEl) futProductEl.addEventListener("change", updateFutFields);
 
   if (symEl) {
     // 打字停下 0.6 秒後自動查；離開欄位時立刻查
@@ -269,6 +351,11 @@ function setupFormEvents() {
     // 送出時：取消所有進行中的查詢，絕不等待查詢結果
     clearTimeout(lookupTimer);
     lookupSeq++;
+
+    if (marketEl.value === "FUT") {
+      await submitFuture(form);
+      return;
+    }
 
     const symbolRaw = symEl.value.trim();
     const market = marketEl.value;
@@ -361,10 +448,13 @@ function sellStock(symbol) {
 
   const totalQty = posQty(item);
   const currentPrice = liveQuotes[symbol] || avgCost(item);
-  const unitHint = item.market === "US" ? "" : "（1 張 = 1000 股）";
+  const fut = isFut(item);
+  const unitHint = fut ? "（口）" : item.market === "US" ? "" : "（1 張 = 1000 股）";
 
   const sellQtyStr = prompt(
-    `【賣出 ${item.name || item.symbol}】\n目前持有：${fmtQty(item, totalQty)}（共 ${totalQty} 股）\n請輸入賣出股數${unitHint}：`,
+    fut
+      ? `【平倉 ${item.name || item.symbol}】\n目前持有：${fmtQty(item, totalQty)}（${item.side === "S" ? "空單" : "多單"}）\n請輸入平倉口數${unitHint}：`
+      : `【賣出 ${item.name || item.symbol}】\n目前持有：${fmtQty(item, totalQty)}（共 ${totalQty} 股）\n請輸入賣出股數${unitHint}：`,
     totalQty
   );
   if (sellQtyStr === null) return;
@@ -375,7 +465,7 @@ function sellStock(symbol) {
     return;
   }
 
-  const sellPriceStr = prompt(`請輸入賣出單價 (原幣)：`, currentPrice);
+  const sellPriceStr = prompt(fut ? `請輸入平倉價格 (點)：` : `請輸入賣出單價 (原幣)：`, currentPrice);
   if (sellPriceStr === null) return;
 
   const sellPrice = parseFloat(sellPriceStr);
@@ -396,7 +486,7 @@ function sellStock(symbol) {
       continue;
     }
     const take = Math.min(lot.qty, remain);
-    pnlOrig += (sellPrice - lot.cost) * take;
+    pnlOrig += dirOf(item) * (sellPrice - lot.cost) * take * multOf(item);
     costSum += lot.cost * take;
     remain -= take;
     if (lot.qty - take > 1e-9) newLots.push({ ...lot, qty: lot.qty - take });
@@ -411,6 +501,7 @@ function sellStock(symbol) {
     symbol: item.symbol,
     name: item.name,
     market: item.market,
+    side: item.side || "",
     cost: costSum / sellQty, // 被賣出部分的加權平均成本
     sellPrice: sellPrice,
     qty: sellQty,
@@ -554,45 +645,71 @@ function deleteStock(symbol) {
 window.deleteStock = deleteStock;
 
 // ---------- 抓取即時價格 ----------
+function applyQuote(symbol, price, prev, stale) {
+  if (!(price > 0)) return; // 價格為 0 或無效時，保留上次的價格
+  // 這次沒有真正的成交價 (只有昨收 / 參考價)，而且之前已有價格 → 保留舊的
+  if (stale && liveQuotes[symbol] !== undefined) return;
+  liveQuotes[symbol] = price;
+  liveStale[symbol] = !!stale;
+  if (prev) livePrev[symbol] = prev;
+  else delete livePrev[symbol];
+  if (!stale) saveQuote(symbol, price, prev);
+}
+
 async function fetchData() {
   if (holdings.length === 0) {
     renderAll();
     return;
   }
 
-  const symbols = holdings.map(h => h.symbol);
+  const symbols = holdings.filter(h => !isFut(h)).map(h => h.symbol);
   if (!symbols.includes("USDTWD=X")) symbols.push("USDTWD=X");
+  const futKeys = [...new Set(holdings.filter(isFut).map(h => h.fkey))];
 
-  try {
-    const res = await fetch(
-      `${WORKER_URL}?symbols=${encodeURIComponent(symbols.join(","))}&_=${Date.now()}`,
-      { cache: "no-store" }
-    );
-    if (res.ok) {
+  // 股票 + 匯率
+  const stockTask = (async () => {
+    try {
+      const res = await fetch(
+        `${WORKER_URL}?symbols=${encodeURIComponent(symbols.join(","))}&_=${Date.now()}`,
+        { cache: "no-store" }
+      );
+      if (!res.ok) return;
       const data = await res.json();
-      const results = data.quoteResponse?.result || [];
-      results.forEach(q => {
+      (data.quoteResponse?.result || []).forEach(q => {
         if (q.symbol === "USDTWD=X") {
           usdTwdRate = q.regularMarketPrice || usdTwdRate;
         } else {
-          if (!(q.regularMarketPrice > 0)) return; // 價格為 0 或無效時，保留上次的價格
-          // 這次沒有真正的成交價 (只有昨收 / 買賣價推算)，而且之前已有價格 → 保留舊的
-          // 只有「今天還沒抓過價格」時，才使用推算價或昨收
-          if ((q.stale || q.estimated) && liveQuotes[q.symbol] !== undefined) return;
-          liveQuotes[q.symbol] = q.regularMarketPrice;
-          liveStale[q.symbol] = !!(q.stale || q.estimated);
-          if (q.regularMarketPreviousClose) livePrev[q.symbol] = q.regularMarketPreviousClose;
-          else delete livePrev[q.symbol];
-          if (!liveStale[q.symbol]) saveQuote(q.symbol, q.regularMarketPrice, q.regularMarketPreviousClose);
+          applyQuote(q.symbol, q.regularMarketPrice, q.regularMarketPreviousClose, q.stale || q.estimated);
         }
       });
-
-      const missing = holdings.filter(h => liveQuotes[h.symbol] === undefined).map(h => h.symbol);
-      if (missing.length) console.warn("抓不到報價:", missing);
+    } catch (e) {
+      console.error("抓取股價失敗:", e);
     }
-  } catch (e) {
-    console.error("抓取股價失敗:", e);
-  }
+  })();
+
+  // 期貨 (一個合約的多單、空單共用同一個報價)
+  const futTask = (async () => {
+    if (!futKeys.length) return;
+    try {
+      const res = await fetch(
+        `${WORKER_URL}?futures=${encodeURIComponent(futKeys.join(","))}&_=${Date.now()}`,
+        { cache: "no-store" }
+      );
+      if (!res.ok) return;
+      const data = await res.json();
+      (data.futuresResult || []).forEach(q => {
+        holdings.filter(h => isFut(h) && h.fkey === q.key)
+          .forEach(h => applyQuote(h.symbol, q.price, q.prev, q.stale));
+      });
+    } catch (e) {
+      console.error("抓取期貨報價失敗:", e);
+    }
+  })();
+
+  await Promise.all([stockTask, futTask]);
+
+  const missing = holdings.filter(h => liveQuotes[h.symbol] === undefined).map(h => h.symbol);
+  if (missing.length) console.warn("抓不到報價:", missing);
 
   renderAll();
 }
@@ -604,6 +721,7 @@ function renderAll() {
 
   let totalValueTwd = 0;
   let totalCostTwd = 0;
+  let totalFutPnl = 0;
   let tickerHtml = "";
 
   // 1. 未實現持股
@@ -621,14 +739,25 @@ function renderAll() {
       const hasQuote = liveQuotes[item.symbol] !== undefined;
       const price = hasQuote ? liveQuotes[item.symbol] : avg;
       const rate = item.market === "US" ? usdTwdRate : 1;
+      const fut = isFut(item);
+      const mult = multOf(item);
+      const dir = dirOf(item);
 
-      const valTwd = price * qty * rate;
-      const costTwd = posCostTotal(item) * rate;
-      const pnlTwd = valTwd - costTwd;
-      const pnlRate = avg > 0 ? ((price - avg) / avg) * 100 : 0;
+      // 期貨：valTwd 是名目價值；損益依多空方向計算
+      const valTwd = price * qty * rate * mult;
+      const costTwd = posCostTotal(item) * rate * mult;
+      const pnlTwd = dir * (valTwd - costTwd);
+      const pnlRate = avg > 0 ? dir * ((price - avg) / avg) * 100 : 0;
+      const pnlExtra = fut
+        ? `${pnlTwd >= 0 ? "+" : ""}${(dir * (price - avg)).toFixed(1)} 點`
+        : `${pnlTwd >= 0 ? "+" : ""}${pnlRate.toFixed(2)}%`;
 
-      totalValueTwd += valTwd;
-      totalCostTwd += costTwd;
+      if (fut) {
+        totalFutPnl += pnlTwd; // 期貨不計入「總市值」，只計損益
+      } else {
+        totalValueTwd += valTwd;
+        totalCostTwd += costTwd;
+      }
 
       const isProfit = pnlTwd >= 0;
       const colorClass = isProfit ? "val-up" : "val-down";
@@ -639,7 +768,7 @@ function renderAll() {
       let chgHtml = '<span class="chg chg-na">今日 --</span>';
       let chgText = "";
       if (hasQuote && prev > 0) {
-        const chg = ((price - prev) / prev) * 100;
+        const chg = ((price - prev) / prev) * 100; // 今日漲跌看商品本身，不受多空影響
         const chgClass = chg >= 0 ? "val-up" : "val-down";
         chgText = ` ${fmtPct(chg)}`;
         chgHtml = `<span class="chg ${chgClass}">今日 ${fmtPct(chg)}</span>`;
@@ -648,7 +777,7 @@ function renderAll() {
       // 分批成本
       const expanded = expandedSet.has(item.symbol);
       const lotsRows = item.lots.map(l => {
-        const lotPnl = (price - l.cost) * l.qty * rate;
+        const lotPnl = dir * (price - l.cost) * l.qty * rate * mult;
         const lotUp = lotPnl >= 0;
         return `
           <div class="lot-row">
@@ -665,17 +794,17 @@ function renderAll() {
       card.innerHTML = `
         <div>
           <div class="stock-header">
-            <span class="stock-symbol">${esc(item.name || item.symbol)} (${esc(item.symbol)})</span>
-            <span class="badge">${esc(item.market)}</span>
+            <span class="stock-symbol">${esc(item.name || item.symbol)}${fut ? "" : ` (${esc(item.symbol)})`}</span>
+            <span class="badge">${esc(marketLabel(item))}</span>
           </div>
           <div class="stock-info">
             <div class="span2">現價: $${price.toFixed(2)} ${chgHtml}${liveStale[item.symbol] ? ' <span class="chg chg-na">(非即時)</span>' : ""}</div>
-            <div>均成本: $${avg.toFixed(2)}</div>
-            <div>持有: ${fmtQty(item, qty)}</div>
-            <div class="span2">市值(NT): $${Math.round(valTwd).toLocaleString()}</div>
+            <div>${fut ? "均價" : "均成本"}: $${avg.toFixed(2)}</div>
+            <div>${fut ? (item.side === "S" ? "空單" : "多單") : "持有"}: ${fmtQty(item, qty)}</div>
+            <div class="span2">${fut ? "名目價值" : "市值"}(NT): $${Math.round(valTwd).toLocaleString()}${fut ? ` <span class="chg chg-na">每點 ${mult}</span>` : ""}</div>
             <div class="pnl-box ${colorClass}">
               <span>未實現損益:</span>
-              <span>${sign}$${Math.round(pnlTwd).toLocaleString()} (${sign}${pnlRate.toFixed(2)}%)</span>
+              <span>${sign}$${Math.round(pnlTwd).toLocaleString()} (${pnlExtra})</span>
             </div>
           </div>
           <div class="lots-toggle" onclick="toggleLots('${esc(item.symbol)}')">
@@ -684,13 +813,13 @@ function renderAll() {
           ${expanded ? `<div class="lots-list">${lotsRows}</div>` : ""}
         </div>
         <div class="card-actions">
-          <button class="btn-sell" onclick="sellStock('${esc(item.symbol)}')">💰 賣出</button>
+          <button class="btn-sell" onclick="sellStock('${esc(item.symbol)}')">${fut ? "💰 平倉" : "💰 賣出"}</button>
           <button class="btn-del" onclick="deleteStock('${esc(item.symbol)}')">刪除</button>
         </div>
       `;
       grid.appendChild(card);
 
-      tickerHtml += `<span class="ticker-item ${colorClass}">${esc(item.symbol)} $${price.toFixed(2)}${chgText} (${sign}$${Math.round(pnlTwd).toLocaleString()})</span>`;
+      tickerHtml += `<span class="ticker-item ${colorClass}">${esc(fut ? item.name : item.symbol)} $${price.toFixed(2)}${chgText} (${sign}$${Math.round(pnlTwd).toLocaleString()})</span>`;
     });
   }
 
@@ -713,6 +842,13 @@ function renderAll() {
     pnlRateEl.className = `stat-sub ${totalPnl >= 0 ? "val-up" : "val-down"}`;
   }
 
+  const futPnlEl = document.getElementById("futuresPnl");
+  if (futPnlEl) {
+    const fs = totalFutPnl >= 0 ? "+" : "";
+    futPnlEl.textContent = `${fs}$${Math.round(totalFutPnl).toLocaleString()}`;
+    futPnlEl.className = `stat-value ${totalFutPnl >= 0 ? "val-up" : "val-down"}`;
+  }
+
   // 3. 已實現紀錄
   let sumRealizedTwd = 0;
   const realizedTbody = document.getElementById("realizedTableBody");
@@ -731,11 +867,11 @@ function renderAll() {
         const tr = document.createElement("tr");
         tr.innerHTML = `
           <td>${esc(r.date)}</td>
-          <td><strong>${esc(r.name || r.symbol)}</strong> (${esc(r.symbol)})</td>
-          <td><span class="badge">${esc(r.market)}</span></td>
+          <td><strong>${esc(r.name || r.symbol)}</strong>${r.market === "FUT" ? "" : ` (${esc(r.symbol)})`}</td>
+          <td><span class="badge">${esc(marketLabel(r))}</span></td>
           <td>$${r.cost.toFixed(2)}</td>
           <td>$${r.sellPrice.toFixed(2)}</td>
-          <td>${r.qty}</td>
+          <td>${r.qty}${r.market === "FUT" ? " 口" : ""}</td>
           <td class="${colorClass}">${sign}$${r.pnlOrig.toFixed(2)}</td>
           <td class="${colorClass}"><strong>${sign}$${Math.round(r.pnlTwd).toLocaleString()}</strong></td>
           <td><button style="background:none; border:none; color:var(--red); cursor:pointer; font-size:12px;" onclick="deleteRealized(${Number(r.id)})">刪除</button></td>
