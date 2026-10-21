@@ -771,12 +771,12 @@ function renderAll() {
         ? `${pnlTwd >= 0 ? "+" : ""}${(dir * (price - avg)).toFixed(1)} 點`
         : `${pnlTwd >= 0 ? "+" : ""}${pnlRate.toFixed(2)}%`;
 
-      if (fut) {
-        totalFutPnl += pnlTwd; // 期貨不計入「總市值」，只計損益
+      if (fut || short) {
+        totalFutPnl += pnlTwd; // 期貨與個股空單：只計損益，併入「其餘未實現損益」
       } else {
-        if (!short) totalValueTwd += valTwd; // 空單不計入總市值，只計損益
+        totalValueTwd += valTwd;
         totalStockPnl += pnlTwd;
-        totalCostTwd += costTwd;             // 損益率的分母 = 多空部位的總成本
+        totalCostTwd += costTwd;
       }
 
       const isProfit = pnlTwd >= 0;
@@ -844,7 +844,7 @@ function renderAll() {
   }
 
   // 2. 總統計
-  const totalPnl = totalStockPnl; // 股票多單 + 空單的未實現損益
+  const totalPnl = totalStockPnl; // 只含股票多單
   const totalPnlRate = totalCostTwd > 0 ? (totalPnl / totalCostTwd) * 100 : 0;
   const pnlSign = totalPnl >= 0 ? "+" : "";
 
