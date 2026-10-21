@@ -355,6 +355,10 @@
           <option value="US">美股 (USD)</option>
           <option value="FUT">台灣期貨 (台指期 / 個股期)</option>
         </select>
+        <select id="stockSide" title="買進或放空">
+          <option value="L">買進 (做多)</option>
+          <option value="S">放空 (融券/借券)</option>
+        </select>
         <input type="number" id="cost" step="any" min="0" placeholder="買入成本 (每股)" required>
         <input type="number" id="qtyLots" step="1" min="0" placeholder="張數 (1張=1000股)">
         <input type="number" id="qtyOdd" step="any" min="0" placeholder="零股股數 (可留空)">
@@ -410,6 +414,6 @@
   </div>
 
   <!-- 帶版本號引入腳本，防手機瀏覽器快取 -->
-  <script src="app.js?v=2.3.0"></script>
+  <script src="app.js?v=2.4.0"></script>
 </body>
 </html>

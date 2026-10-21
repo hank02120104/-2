@@ -72,7 +72,9 @@ const FUT_PRODUCTS = {
 const isFut = h => h.market === "FUT";
 const dirOf = h => (h.side === "S" ? -1 : 1);                 // 多 +1 / 空 -1
 const multOf = h => (isFut(h) ? (Number(h.mult) || 1) : 1);
-const marketLabel = h => (isFut(h) ? `期貨·${h.side === "S" ? "空" : "多"}` : h.market);
+const qsymOf = h => h.qsym || h.symbol; // 空單的 symbol 帶 #S，查報價要用原本的代號
+const marketLabel = h =>
+  isFut(h) ? `期貨·${h.side === "S" ? "空" : "多"}` : h.side === "S" ? `${h.market}·空` : h.market;
 
 function fmtPct(v) {
   return `${v >= 0 ? "+" : ""}${v.toFixed(2)}%`;
@@ -100,6 +102,8 @@ function normalizeHoldings(list) {
     } else {
       const extra = h.market === "FUT"
         ? { fkey: h.fkey, side: h.side === "S" ? "S" : "L", mult: Number(h.mult) || 1 }
+        : h.side === "S"
+        ? { side: "S", qsym: h.qsym || String(h.symbol).split("#")[0] }
         : {};
       map.set(h.symbol, { symbol: h.symbol, name: h.name || "", market: h.market || "US", lots, ...extra });
     }
@@ -162,9 +166,12 @@ function updateQtyInputs() {
   const symEl = document.getElementById("symbol");
   const costEl = document.getElementById("cost");
   const futBox = document.getElementById("futFields");
+  const sideEl = document.getElementById("stockSide");
   if (!lotsEl || !oddEl) return;
 
   const fut = market === "FUT";
+  const short = !fut && sideEl?.value === "S";
+  if (sideEl) sideEl.style.display = fut ? "none" : "";
   if (futBox) futBox.style.display = fut ? "contents" : "none";
   if (symEl) {
     symEl.style.display = fut ? "none" : "";
@@ -176,11 +183,13 @@ function updateQtyInputs() {
   oddEl.style.display = fut ? "none" : "";
   if (fut) oddEl.value = "";
   oddEl.placeholder = market === "US" ? "持有股數" : "零股股數 (可留空)";
-  if (costEl) costEl.placeholder = fut ? "進場價 (點數；個股期貨填股價)" : "買入成本 (每股)";
+  if (costEl) costEl.placeholder = fut ? "進場價 (點數；個股期貨填股價)" : short ? "放空價 (每股)" : "買入成本 (每股)";
 
   if (fut) {
     updateFutFields();
     setHint("📈 期貨損益 = 價差 × 每點價值 × 口數 (做空反向)，未計手續費與期交稅。");
+  } else if (short) {
+    setHint("🔻 放空損益 = (放空價 − 現價) × 股數；未計借券費/融券利息、保證金、手續費與證交稅。");
   } else if (typeof DEFAULT_HINT !== "undefined") {
     setHint(DEFAULT_HINT);
   }
@@ -323,6 +332,8 @@ function setupFormEvents() {
   if (marketEl) marketEl.addEventListener("change", updateQtyInputs);
   const futProductEl = document.getElementById("futProduct");
   if (futProductEl) futProductEl.addEventListener("change", updateFutFields);
+  const stockSideEl = document.getElementById("stockSide");
+  if (stockSideEl) stockSideEl.addEventListener("change", updateQtyInputs);
 
   if (symEl) {
     // 打字停下 0.6 秒後自動查；離開欄位時立刻查
@@ -381,7 +392,9 @@ function setupFormEvents() {
     const name = nameEl.value.trim() || symbolRaw.toUpperCase();
     const symbol = buildSymbol(symbolRaw, market);
 
-    addLot(symbol, name, market, cost, qty);
+    const isShort = document.getElementById("stockSide")?.value === "S";
+    // 空單另立一筆 (symbol 加 #S)，不會跟同檔的多單混在一起
+    addLot(isShort ? `${symbol}#S` : symbol, name, market, cost, qty, isShort ? { side: "S", qsym: symbol } : {});
     await saveAndSync();
 
     form.reset();
@@ -449,12 +462,14 @@ function sellStock(symbol) {
   const totalQty = posQty(item);
   const currentPrice = liveQuotes[symbol] || avgCost(item);
   const fut = isFut(item);
+  const short = !fut && dirOf(item) < 0;
+  const verb = fut ? "平倉" : short ? "回補" : "賣出";
   const unitHint = fut ? "（口）" : item.market === "US" ? "" : "（1 張 = 1000 股）";
 
   const sellQtyStr = prompt(
     fut
       ? `【平倉 ${item.name || item.symbol}】\n目前持有：${fmtQty(item, totalQty)}（${item.side === "S" ? "空單" : "多單"}）\n請輸入平倉口數${unitHint}：`
-      : `【賣出 ${item.name || item.symbol}】\n目前持有：${fmtQty(item, totalQty)}（共 ${totalQty} 股）\n請輸入賣出股數${unitHint}：`,
+      : `【${verb} ${item.name || qsymOf(item)}】\n目前${short ? "空單" : "持有"}：${fmtQty(item, totalQty)}（共 ${totalQty} 股）\n請輸入${verb}股數${unitHint}：`,
     totalQty
   );
   if (sellQtyStr === null) return;
@@ -465,7 +480,7 @@ function sellStock(symbol) {
     return;
   }
 
-  const sellPriceStr = prompt(fut ? `請輸入平倉價格 (點)：` : `請輸入賣出單價 (原幣)：`, currentPrice);
+  const sellPriceStr = prompt(fut ? `請輸入平倉價格 (點)：` : short ? `請輸入回補價格 (原幣)：` : `請輸入賣出單價 (原幣)：`, currentPrice);
   if (sellPriceStr === null) return;
 
   const sellPrice = parseFloat(sellPriceStr);
@@ -662,7 +677,7 @@ async function fetchData() {
     return;
   }
 
-  const symbols = holdings.filter(h => !isFut(h)).map(h => h.symbol);
+  const symbols = [...new Set(holdings.filter(h => !isFut(h)).map(qsymOf))];
   if (!symbols.includes("USDTWD=X")) symbols.push("USDTWD=X");
   const futKeys = [...new Set(holdings.filter(isFut).map(h => h.fkey))];
 
@@ -679,7 +694,9 @@ async function fetchData() {
         if (q.symbol === "USDTWD=X") {
           usdTwdRate = q.regularMarketPrice || usdTwdRate;
         } else {
-          applyQuote(q.symbol, q.regularMarketPrice, q.regularMarketPreviousClose, q.stale || q.estimated);
+          // 同一檔的多單、空單共用同一個報價
+          holdings.filter(h => !isFut(h) && qsymOf(h) === q.symbol)
+            .forEach(h => applyQuote(h.symbol, q.regularMarketPrice, q.regularMarketPreviousClose, q.stale || q.estimated));
         }
       });
     } catch (e) {
@@ -722,6 +739,7 @@ function renderAll() {
   let totalValueTwd = 0;
   let totalCostTwd = 0;
   let totalFutPnl = 0;
+  let totalStockPnl = 0;
   let tickerHtml = "";
 
   // 1. 未實現持股
@@ -742,6 +760,7 @@ function renderAll() {
       const fut = isFut(item);
       const mult = multOf(item);
       const dir = dirOf(item);
+      const short = !fut && dir < 0;
 
       // 期貨：valTwd 是名目價值；損益依多空方向計算
       const valTwd = price * qty * rate * mult;
@@ -755,8 +774,9 @@ function renderAll() {
       if (fut) {
         totalFutPnl += pnlTwd; // 期貨不計入「總市值」，只計損益
       } else {
-        totalValueTwd += valTwd;
-        totalCostTwd += costTwd;
+        if (!short) totalValueTwd += valTwd; // 空單不計入總市值，只計損益
+        totalStockPnl += pnlTwd;
+        totalCostTwd += costTwd;             // 損益率的分母 = 多空部位的總成本
       }
 
       const isProfit = pnlTwd >= 0;
@@ -782,7 +802,7 @@ function renderAll() {
         return `
           <div class="lot-row">
             <span class="lot-date">${esc(l.date || "—")}</span>
-            <span>成本 $${l.cost.toFixed(2)}</span>
+            <span>${short ? "放空" : "成本"} $${l.cost.toFixed(2)}</span>
             <span>${fmtQty(item, l.qty)}</span>
             <span class="${lotUp ? "val-up" : "val-down"}">${lotUp ? "+" : ""}$${Math.round(lotPnl).toLocaleString()}</span>
             <button class="btn-lot-del" onclick="deleteLot('${esc(item.symbol)}','${esc(l.id)}')">✕</button>
@@ -794,14 +814,14 @@ function renderAll() {
       card.innerHTML = `
         <div>
           <div class="stock-header">
-            <span class="stock-symbol">${esc(item.name || item.symbol)}${fut ? "" : ` (${esc(item.symbol)})`}</span>
+            <span class="stock-symbol">${esc(item.name || item.symbol)}${fut ? "" : ` (${esc(qsymOf(item))})`}</span>
             <span class="badge">${esc(marketLabel(item))}</span>
           </div>
           <div class="stock-info">
             <div class="span2">現價: $${price.toFixed(2)} ${chgHtml}${liveStale[item.symbol] ? ' <span class="chg chg-na">(非即時)</span>' : ""}</div>
-            <div>${fut ? "均價" : "均成本"}: $${avg.toFixed(2)}</div>
-            <div>${fut ? (item.side === "S" ? "空單" : "多單") : "持有"}: ${fmtQty(item, qty)}</div>
-            <div class="span2">${fut ? "名目價值" : "市值"}(NT): $${Math.round(valTwd).toLocaleString()}${fut ? ` <span class="chg chg-na">每點 ${mult}</span>` : ""}</div>
+            <div>${fut ? "均價" : short ? "均放空價" : "均成本"}: $${avg.toFixed(2)}</div>
+            <div>${fut ? (item.side === "S" ? "空單" : "多單") : short ? "空單" : "持有"}: ${fmtQty(item, qty)}</div>
+            <div class="span2">${fut ? "名目價值" : short ? "空單市值" : "市值"}(NT): $${Math.round(valTwd).toLocaleString()}${fut ? ` <span class="chg chg-na">每點 ${mult}</span>` : ""}</div>
             <div class="pnl-box ${colorClass}">
               <span>未實現損益:</span>
               <span>${sign}$${Math.round(pnlTwd).toLocaleString()} (${pnlExtra})</span>
@@ -813,18 +833,18 @@ function renderAll() {
           ${expanded ? `<div class="lots-list">${lotsRows}</div>` : ""}
         </div>
         <div class="card-actions">
-          <button class="btn-sell" onclick="sellStock('${esc(item.symbol)}')">${fut ? "💰 平倉" : "💰 賣出"}</button>
+          <button class="btn-sell" onclick="sellStock('${esc(item.symbol)}')">${fut ? "💰 平倉" : short ? "🔄 回補" : "💰 賣出"}</button>
           <button class="btn-del" onclick="deleteStock('${esc(item.symbol)}')">刪除</button>
         </div>
       `;
       grid.appendChild(card);
 
-      tickerHtml += `<span class="ticker-item ${colorClass}">${esc(fut ? item.name : item.symbol)} $${price.toFixed(2)}${chgText} (${sign}$${Math.round(pnlTwd).toLocaleString()})</span>`;
+      tickerHtml += `<span class="ticker-item ${colorClass}">${esc(fut ? item.name : qsymOf(item))}${short ? "(空)" : ""} $${price.toFixed(2)}${chgText} (${sign}$${Math.round(pnlTwd).toLocaleString()})</span>`;
     });
   }
 
   // 2. 總統計
-  const totalPnl = totalValueTwd - totalCostTwd;
+  const totalPnl = totalStockPnl; // 股票多單 + 空單的未實現損益
   const totalPnlRate = totalCostTwd > 0 ? (totalPnl / totalCostTwd) * 100 : 0;
   const pnlSign = totalPnl >= 0 ? "+" : "";
 
@@ -867,7 +887,7 @@ function renderAll() {
         const tr = document.createElement("tr");
         tr.innerHTML = `
           <td>${esc(r.date)}</td>
-          <td><strong>${esc(r.name || r.symbol)}</strong>${r.market === "FUT" ? "" : ` (${esc(r.symbol)})`}</td>
+          <td><strong>${esc(r.name || r.symbol)}</strong>${r.market === "FUT" ? "" : ` (${esc(String(r.symbol).split("#")[0])})`}</td>
           <td><span class="badge">${esc(marketLabel(r))}</span></td>
           <td>$${r.cost.toFixed(2)}</td>
           <td>$${r.sellPrice.toFixed(2)}</td>
